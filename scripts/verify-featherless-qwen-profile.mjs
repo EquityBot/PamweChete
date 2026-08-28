@@ -7,8 +7,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MODEL_ID = "OBLITERATUS/Qwen3.8-27B-OBLITERATED";
 const MODEL_REF = `featherless/${MODEL_ID}`;
 const KEY_LIKE_PATTERN = /rc_[A-Za-z0-9]{32,}/g;
-const LEAN_TOOLS = ["read", "bash", "edit", "write"];
-const EXPANDED_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"];
+const LEAN_TOOLS = ["read", "bash", "edit", "write", "ask_user_question"];
+const EXPANDED_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "ask_user_question"];
 
 function requiredFile(path, label) {
 	assert.ok(existsSync(path) && statSync(path).isFile(), `${label} is missing`);
@@ -86,6 +86,7 @@ function validateModels(models) {
 	assert.deepEqual(provider.compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
+		supportsFinishReason: false,
 		maxTokensField: "max_tokens",
 		requiresToolResultName: true,
 		supportsStrictMode: false,
@@ -101,6 +102,11 @@ function validateModels(models) {
 	assert.equal(model.samplingParams?.temperature, 0, "Temperature must be deterministic");
 	assert.equal(model.samplingParams?.repetition_penalty, 1.15, "Repetition penalty differs");
 	assert.equal(model.samplingParams?.parallel_tool_calls, false, "Parallel tool calls must be disabled");
+	assert.equal(
+		model.samplingParams?.chat_template_kwargs?.enable_thinking,
+		false,
+		"chat template enable_thinking must be explicitly disabled",
+	);
 }
 
 function validateSettings(settings, profileDirectory) {
@@ -127,6 +133,7 @@ function validateSettings(settings, profileDirectory) {
 	assertExactPaths(settings.extensions, [
 		join(ROOT, "extensions", "ask-user-question.ts"),
 		join(ROOT, "extensions", "bash-guard"),
+		join(ROOT, "extensions", "featherless-tool-bridge"),
 		join(ROOT, "extensions", "custom-header.ts"),
 		join(ROOT, "extensions", "prompt-snippets"),
 	], ROOT, "extensions");

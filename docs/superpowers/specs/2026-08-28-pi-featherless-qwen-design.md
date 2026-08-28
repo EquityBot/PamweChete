@@ -139,6 +139,22 @@ Model baseline:
 
 Thinking flags will not be forced in the first run. If the model emits unwanted thinking or malformed tool calls, compare Pi's Qwen thinking format with the baseline on the failing fixture. Retain the variant that completes the tool loop correctly; do not keep retrying arbitrary parameter combinations.
 
+### Live compatibility evidence
+
+The authenticated endpoint diverged from the public capability label during implementation:
+
+- authenticated metadata reported native tool calling as unavailable;
+- streaming responses omitted `finish_reason`;
+- attempted calls arrived as ordinary text, including bounded Qwen-style wrappers;
+- leaving `enable_thinking` unset leaked generated reasoning ahead of calls.
+
+The implemented profile therefore sets `supportsFinishReason: false`, explicitly sends
+`chat_template_kwargs.enable_thinking: false`, and loads a model-scoped text-tool bridge. The
+bridge removes conflicting native tool fields only for the exact provider/model, advertises the
+active schemas in the system prompt, converts only tested bounded response forms, and preserves
+Pi's normal schema validation, bash guard and tool-call safety hooks. This evidence-backed bridge
+supersedes the original single-parameter-adjustment fallback because the live endpoint did not
+provide the native protocol the baseline assumed.
 ## Pi settings
 
 The initial global settings will include:

@@ -7,11 +7,27 @@ This profile configures Pi for `OBLITERATUS/Qwen3.8-27B-OBLITERATED` through Fea
 - Exact provider/model: `featherless/OBLITERATUS/Qwen3.8-27B-OBLITERATED`
 - Maximum advertised context: 32,768 tokens, lowered when the authenticated plan reports a smaller limit
 - Baseline sampling: temperature `0`, repetition penalty `1.15`, parallel tool calls disabled
-- Thinking: off; the profile does not force chat-template thinking flags because that can damage structured tool parsing on this model
-- Extensions: ask-user-question, bash-guard, custom header and prompt snippets
+- Thinking: off at both Pi and chat-template levels; `enable_thinking: false` prevents the endpoint from leaking generated reasoning ahead of text-tool envelopes
+- Extensions: ask-user-question, bash-guard, the bounded Featherless text-tool bridge, custom header and prompt snippets
 - Network, browser, memory and subagent extensions: not loaded by default
 
 The benchmark-generated `settings.windows.json` records the winning tool surface. It is written only after both approved candidates complete the same live fixtures.
+
+## Benchmark result
+
+The 2026-08-28 live benchmark on Pi 0.84.3 selected the expanded surface:
+`read`, `grep`, `find`, `ls`, `bash`, `edit`, `write` and
+`ask_user_question`. It passed project description, seeded repair and
+multi-step create-and-verify fixtures with 10 tool calls, zero invalid calls
+and zero repeated calls. The lean surface passed the first two fixtures but
+did not complete the multi-step fixture in the selection run.
+
+The authenticated Featherless endpoint currently reports native tool calling
+as unavailable for this model and returns attempted calls as ordinary text.
+The model-scoped bridge recognises only the bounded response forms documented
+in its README, extracts one call for a currently active tool, and leaves Pi's
+normal schema validation and safety hooks in control. Unknown tools, malformed
+arguments, repeated envelopes and unrecognised wrappers are not executed.
 
 ## Security boundary
 

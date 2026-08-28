@@ -6,6 +6,7 @@
       "compat": {
         "supportsDeveloperRole": false,
         "supportsReasoningEffort": false,
+        "supportsFinishReason": false,
         "maxTokensField": "max_tokens",
         "requiresToolResultName": true,
         "supportsStrictMode": false
@@ -23,7 +24,10 @@
           "samplingParams": {
             "temperature": 0,
             "repetition_penalty": 1.15,
-            "parallel_tool_calls": false
+            "parallel_tool_calls": false,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
           },
           "cost": {
             "input": 0.265,

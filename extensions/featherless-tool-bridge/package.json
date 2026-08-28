@@ -1,0 +1,11 @@
+{
+  "name": "pi-featherless-tool-bridge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./test/protocol.test.mjs"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

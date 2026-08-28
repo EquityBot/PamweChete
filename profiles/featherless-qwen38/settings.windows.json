@@ -1,0 +1,59 @@
+{
+  "defaultProvider": "featherless",
+  "defaultModel": "OBLITERATUS/Qwen3.8-27B-OBLITERATED",
+  "defaultThinkingLevel": "off",
+  "enabledModels": [
+    "featherless/OBLITERATUS/Qwen3.8-27B-OBLITERATED"
+  ],
+  "defaultTools": [
+    "read",
+    "grep",
+    "find",
+    "ls",
+    "bash",
+    "edit",
+    "write",
+    "ask_user_question"
+  ],
+  "shellPath": "C:/Program Files/Git/bin/bash.exe",
+  "defaultProjectTrust": "ask",
+  "enableInstallTelemetry": false,
+  "enableAnalytics": false,
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 6144,
+    "keepRecentTokens": 10000
+  },
+  "branchSummary": {
+    "reserveTokens": 6144,
+    "skipPrompt": false
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 2,
+    "baseDelayMs": 2000,
+    "provider": {
+      "timeoutMs": 300000,
+      "maxRetries": 0,
+      "maxRetryDelayMs": 30000
+    }
+  },
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "one-at-a-time",
+  "httpIdleTimeoutMs": 300000,
+  "images": {
+    "autoResize": true,
+    "blockImages": true
+  },
+  "extensions": [
+    "C:/Users/-/Documents/Repos/pi-config/extensions/ask-user-question.ts",
+    "C:/Users/-/Documents/Repos/pi-config/extensions/bash-guard",
+    "C:/Users/-/Documents/Repos/pi-config/extensions/featherless-tool-bridge",
+    "C:/Users/-/Documents/Repos/pi-config/extensions/custom-header.ts",
+    "C:/Users/-/Documents/Repos/pi-config/extensions/prompt-snippets"
+  ],
+  "prompts": [
+    "C:/Users/-/Documents/Repos/pi-config/profiles/featherless-qwen38/prompts/implement.md",
+    "C:/Users/-/Documents/Repos/pi-config/profiles/featherless-qwen38/prompts/verify.md"
+  ]
+}
