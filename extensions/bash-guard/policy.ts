@@ -31,6 +31,10 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Set([
 	"version",
 ]);
 
+const ENV_OPTIONS_WITH_VALUES = new Set(["-u", "--unset", "-C", "--chdir"]);
+const ENV_SPLIT_STRING_COMMAND = -1;
+const ENV_SPLIT_STRING_PIPE_COMMAND = "env-split-string";
+
 function isOpToken(token) {
 	return typeof token === "object" && token !== null && "op" in token;
 }
@@ -56,6 +60,44 @@ function splitOnOps(tokens, splitOps) {
 
 function commandName(value) {
 	return value.split(/[\\/]/).at(-1)?.replace(/\.exe$/i, "").toLowerCase() ?? value.toLowerCase();
+}
+
+function isEnvSplitStringOption(value) {
+	if (/^-[i0v]*S/.test(value)) return true;
+	const optionName = value.split("=", 1)[0];
+	return optionName.length >= 3 && "--split-string".startsWith(optionName);
+}
+
+function commandIndex(tokens, startIndex = 0) {
+	let index = startIndex;
+	while (index < tokens.length && typeof tokens[index] === "string" && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
+		index += 1;
+	}
+	if (typeof tokens[index] !== "string") return null;
+	if (commandName(tokens[index]) !== "env") return index;
+	index += 1;
+	while (index < tokens.length && typeof tokens[index] === "string") {
+		if (tokens[index] === "--") {
+			index += 1;
+			while (index < tokens.length && typeof tokens[index] === "string" && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
+				index += 1;
+			}
+			break;
+		}
+		if (isEnvSplitStringOption(tokens[index])) {
+			return ENV_SPLIT_STRING_COMMAND;
+		}
+		if (ENV_OPTIONS_WITH_VALUES.has(tokens[index])) {
+			index += 2;
+			continue;
+		}
+		if (/^-/.test(tokens[index]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
+			index += 1;
+			continue;
+		}
+		break;
+	}
+	return typeof tokens[index] === "string" ? index : null;
 }
 
 function hasShortFlag(args, flag) {
@@ -91,6 +133,10 @@ function gitCommandParts(args) {
 function isReadOnlyGitCommand(args) {
 	const { subcommand, subArgs } = gitCommandParts(args);
 	if (!subcommand || subcommand === "--help" || subcommand === "--version") return true;
+	const optionEnd = subArgs.indexOf("--");
+	const optionArgs = optionEnd === -1 ? subArgs : subArgs.slice(0, optionEnd);
+	if (subcommand === "diff" && optionArgs.some((arg) => arg === "--output" || arg.startsWith("--output="))) return false;
+	if (subcommand === "fsck" && optionArgs.includes("--lost-found")) return false;
 	if (READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return true;
 
 	if (subcommand === "remote") {
@@ -125,23 +171,17 @@ function isReadOnlyGitCommand(args) {
 }
 
 function firstCommandAfterPipe(tokens, pipeIndex) {
-	let index = pipeIndex + 1;
-	while (index < tokens.length && typeof tokens[index] === "string" && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
-		index += 1;
-	}
-	if (typeof tokens[index] !== "string") return null;
-	if (commandName(tokens[index]) !== "env") return commandName(tokens[index]);
-	index += 1;
-	while (index < tokens.length && typeof tokens[index] === "string" && (/^-/.test(tokens[index]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index]))) {
-		index += 1;
-	}
-	return typeof tokens[index] === "string" ? commandName(tokens[index]) : null;
+	const index = commandIndex(tokens, pipeIndex + 1);
+	if (index === ENV_SPLIT_STRING_COMMAND) return ENV_SPLIT_STRING_PIPE_COMMAND;
+	return index === null ? null : commandName(tokens[index]);
 }
 
 function hasPipeToShell(tokens) {
 	const shells = new Set(["bash", "dash", "fish", "sh", "zsh"]);
 	for (let index = 0; index < tokens.length; index += 1) {
-		if (isOpToken(tokens[index]) && tokens[index].op === "|" && shells.has(firstCommandAfterPipe(tokens, index))) {
+		if (!isOpToken(tokens[index]) || tokens[index].op !== "|") continue;
+		const receiver = firstCommandAfterPipe(tokens, index);
+		if (shells.has(receiver) || receiver === ENV_SPLIT_STRING_PIPE_COMMAND) {
 			return true;
 		}
 	}
@@ -151,11 +191,14 @@ function hasPipeToShell(tokens) {
 function analyzeSegment(segment) {
 	const reasons = [];
 	let severity = "medium";
-	const args = tokensToStrings(segment);
-	if (args.length === 0) return null;
+	const index = commandIndex(segment);
+	if (index === null) return null;
+	if (index === ENV_SPLIT_STRING_COMMAND) {
+		return { severity, reasons: ["env --split-string (opaque command execution)"] };
+	}
 
-	const cmd = commandName(args[0]);
-	const rest = args.slice(1);
+	const cmd = commandName(segment[index]);
+	const rest = tokensToStrings(segment.slice(index + 1));
 
 	if (cmd === "sudo") {
 		reasons.push("sudo (elevated privileges)");

