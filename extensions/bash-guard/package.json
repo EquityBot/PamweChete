@@ -2,8 +2,11 @@
   "name": "pi-bash-guard",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node --test ./test/policy.test.mjs"
+  },
   "dependencies": {
-    "shell-quote": "^1.8.3"
+    "shell-quote": "^1.10.0"
   },
   "pi": {
     "extensions": ["./index.ts"]

@@ -11,14 +11,17 @@ which pi-subagents injects into every spawned process.
 ### Main session (`PI_SUBAGENT_DEPTH` = 0 or unset) — interactive prompt
 
 - Heuristically detects destructive/questionable commands via shell-aware parsing
-- Prompts for **any** `git ...` command (escalates severity for especially risky ones: `git rm`,
-  `git reset --hard`, `git clean -fdx`, `git push --force`, `git reflog expire`, `git gc --prune`)
+- Allows read-only Git inspection without interruption (`status`, `diff`, `log`, `show`,
+  `rev-parse`, `remote -v`, and list/query forms)
+- Prompts for Git operations that change repository or remote state, escalating destructive
+  operations such as `git reset --hard`, `git clean -fdx`, and `git push --force`
 - Prompts for disk/volume tooling: `diskutil`, `hdiutil`, `mkfs*`, `newfs_*`, `wipefs`, `parted`,
   `fdisk`, `gdisk/sgdisk`, `cryptsetup`, `pvcreate/vgcreate/lvcreate`, `zpool`, `lsblk`
 - Prompts for: `rm`/`rmdir`/`unlink`, `sudo`, `find -delete`, `dd`, `truncate`, `sed -i`,
   `perl -pi`, `chmod/chown -R`, `mv/cp --force`, `kill`/`pkill`/`killall`, `shutdown`/`reboot`,
   `systemctl stop/disable`, `curl|sh`/`wget|sh`, `kubectl delete`, `terraform destroy`,
-  `aws s3 rm --recursive`, `gcloud delete`, shell redirections (`>`, `>>`, `2>`), pipes
+  `aws s3 rm --recursive`, `gcloud delete`, and shell redirections (`>`, `>>`, `2>`)
+- Allows harmless pipelines such as `git log | head`; pipe-to-shell execution remains high risk
 - Shows a 2-option dialog: **Run** / **Abort**
 - If aborted, the tool call is blocked and the model receives a clear reason
 - Remembers recently aborted commands for 60 s to prevent retry loops
@@ -61,5 +64,6 @@ Auto-discovered from `~/.pi/agent/extensions/bash-guard/`. Run `/reload` in pi.
 ## Notes
 
 - Scope: `bash` tool calls only (`write`/`edit` and user `!` commands are not intercepted).
+- Policy behaviour is covered by `npm test` in this directory.
 - `--bash-guard-auto-allow`: main-session flag that allows flagged commands when there is no UI
   (e.g. running pi non-interactively). Has no effect in subagent sessions.
