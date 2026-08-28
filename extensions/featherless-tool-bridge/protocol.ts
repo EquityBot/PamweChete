@@ -90,6 +90,58 @@ function parseObservedFunctionArgsMarkup(text: string, allowedTools: Set<string>
 	return { name, arguments: argumentsValue };
 }
 
+function parseObservedFunctionLeafMarkup(text: string, allowedTools: Set<string>): ParsedToolEnvelope | undefined {
+	const outer = text.match(
+		/^<tool_call>\s*<function=([A-Za-z_][A-Za-z0-9_-]*)>\s*([\s\S]*?)\s*<\/function>\s*<\/tool_call>$/,
+	);
+	const name = outer?.[1];
+	if (!name || !allowedTools.has(name)) {
+		return undefined;
+	}
+	const body = outer[2];
+	const leaf = /\s*<([A-Za-z_][A-Za-z0-9_-]*)>\s*([^<>]*?)\s*<\/\1>/gy;
+	const argumentsValue: Record<string, unknown> = {};
+	let offset = 0;
+	while (offset < body.length) {
+		leaf.lastIndex = offset;
+		const match = leaf.exec(body);
+		if (!match || match.index !== offset) {
+			return undefined;
+		}
+		const key = match[1];
+		const value = match[2].trim();
+		if (UNSAFE_ARGUMENT_KEYS.has(key) || Object.hasOwn(argumentsValue, key) || value.length === 0) {
+			return undefined;
+		}
+		argumentsValue[key] = value;
+		offset = leaf.lastIndex;
+	}
+	if (Object.keys(argumentsValue).length === 0) {
+		return undefined;
+	}
+	return { name, arguments: argumentsValue };
+}
+
+function parseObservedNamedToolArgsMarkup(text: string, allowedTools: Set<string>): ParsedToolEnvelope | undefined {
+	const match = text.match(
+		/^<tool_call>\s*<([A-Za-z_][A-Za-z0-9_-]*)>\s*(\{[\s\S]*\})\s*<\/\1>\s*(?:<\/tool_call>)?$/,
+	);
+	const name = match?.[1];
+	if (!name || !allowedTools.has(name)) {
+		return undefined;
+	}
+	let argumentsValue: unknown;
+	try {
+		argumentsValue = JSON.parse(match[2]);
+	} catch {
+		return undefined;
+	}
+	if (!isPlainObject(argumentsValue) || hasUnsafeKey(argumentsValue)) {
+		return undefined;
+	}
+	return { name, arguments: argumentsValue };
+}
+
 function unwrapObservedJsonToolCall(text: string): string | undefined {
 	const malformedClosers = text.match(
 		/^<tool_call>\s*(\{[\s\S]*\})\s*<\/invoke>\s*<\/parameter>\s*<\/function>\s*<\/tool_call>$/,
@@ -98,7 +150,11 @@ function unwrapObservedJsonToolCall(text: string): string | undefined {
 		return malformedClosers[1].trim();
 	}
 	const standard = text.match(/^<tool_call>\s*([\s\S]*?)\s*<\/tool_call>$/);
-	return standard?.[1]?.trim();
+	if (standard) {
+		return standard[1].trim();
+	}
+	const endOfResponse = text.match(/^<tool_call>\s*(\{[\s\S]*\})$/);
+	return endOfResponse?.[1]?.trim();
 }
 
 export function parseToolEnvelope(text: string, allowedTools: Iterable<string>): ParsedToolEnvelope | undefined {
@@ -107,9 +163,17 @@ export function parseToolEnvelope(text: string, allowedTools: Iterable<string>):
 	}
 	const allowedToolSet = new Set(allowedTools);
 	let candidate = text.trim();
+	const directNamedToolArgsMarkup = parseObservedNamedToolArgsMarkup(candidate, allowedToolSet);
+	if (directNamedToolArgsMarkup) {
+		return directNamedToolArgsMarkup;
+	}
 	const directFunctionArgsMarkup = parseObservedFunctionArgsMarkup(candidate, allowedToolSet);
 	if (directFunctionArgsMarkup) {
 		return directFunctionArgsMarkup;
+	}
+	const directFunctionLeafMarkup = parseObservedFunctionLeafMarkup(candidate, allowedToolSet);
+	if (directFunctionLeafMarkup) {
+		return directFunctionLeafMarkup;
 	}
 	const directBashMarkup = parseObservedBashMarkup(candidate, allowedToolSet);
 	if (directBashMarkup) {

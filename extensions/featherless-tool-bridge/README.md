@@ -32,9 +32,20 @@ must be one currently active tool and the parameter body must be exactly one
 JSON object. Unknown tools, arrays, duplicate parameters, mismatched closers
 and prototype-polluting keys are rejected.
 
-The parser also recognises one fixed legacy closer sequence observed around a
-single JSON envelope. Extra or repeated closers and missing outer tags are not
-accepted.
+For the observed leaf-argument variant, a function may instead contain one or
+more complete `<ARG>plain text</ARG>` pairs. Argument names must be unique and
+safe, values cannot contain nested tags, and Pi's tool schema decides whether
+the resulting string values are valid for that tool.
+
+The observed compact equivalent `<tool_call><NAME>{…}</NAME>` is accepted with
+or without the final outer closer only at end of response. The opening and
+closing tool names must match, and the same active-tool and argument checks
+apply.
+
+The parser also recognises one fixed legacy closer sequence and one observed
+end-of-response variant containing an opening `<tool_call>` followed by exactly
+one JSON envelope. Extra or repeated closers, trailing content and a missing
+opening tag are not accepted.
 
 For this exact provider/model, the extension removes OpenAI-native `tools`,
 `tool_choice` and `parallel_tool_calls` fields from the outgoing payload. The

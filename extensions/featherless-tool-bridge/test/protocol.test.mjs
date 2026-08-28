@@ -81,6 +81,16 @@ test("accepts the model's exact single-parameter bash markup", () => {
 	);
 });
 
+test("accepts the model's exact end-of-response tool wrapper without a closer", () => {
+	assert.deepEqual(
+		parseToolEnvelope(
+			'<tool_call>\n{"tool":"read","args":{"path":"package.json"}}',
+			allowedTools,
+		),
+		{ name: "read", arguments: { path: "package.json" } },
+	);
+});
+
 test("accepts the model's exact function args wrapper", () => {
 	assert.deepEqual(
 		parseToolEnvelope(
@@ -91,6 +101,26 @@ test("accepts the model's exact function args wrapper", () => {
 	);
 });
 
+test("accepts the model's exact function leaf-argument wrapper", () => {
+	assert.deepEqual(
+		parseToolEnvelope(
+			"<tool_call>\n<function=read>\n<path>package.json</path>\n</function>\n</tool_call>",
+			allowedTools,
+		),
+		{ name: "read", arguments: { path: "package.json" } },
+	);
+});
+
+test("accepts the model's exact named-tool args wrapper", () => {
+	assert.deepEqual(
+		parseToolEnvelope(
+			'<tool_call>\n<bash>{"command":"pwd && ls -la","timeout":60}</bash>',
+			allowedTools,
+		),
+		{ name: "bash", arguments: { command: "pwd && ls -la", timeout: 60 } },
+	);
+});
+
 test("rejects unsafe function args wrapper variants", () => {
 	const rejected = [
 		'<tool_call>\n<function=delete_everything>\n<parameter=args>\n{}\n</function>\n</tool_call>',
@@ -98,6 +128,34 @@ test("rejects unsafe function args wrapper variants", () => {
 		'<tool_call>\n<function=read>\n<parameter=args>\n{"constructor":{"prototype":{"polluted":true}}}\n</function>\n</tool_call>',
 		'<tool_call>\n<function=read>\n<parameter=args>\n{}\n<parameter=args>\n{}\n</function>\n</tool_call>',
 		'<tool_call>\n<function=read>\n<parameter=args>\n{}\n</parameter>\n</function>\n</tool_call>',
+	];
+
+	for (const value of rejected) {
+		assert.equal(parseToolEnvelope(value, allowedTools), undefined, value);
+	}
+});
+
+test("rejects unsafe function leaf-argument wrapper variants", () => {
+	const rejected = [
+		"<tool_call>\n<function=delete_everything>\n<path>x</path>\n</function>\n</tool_call>",
+		"<tool_call>\n<function=read>\n<constructor>x</constructor>\n</function>\n</tool_call>",
+		"<tool_call>\n<function=read>\n<path>a</path>\n<path>b</path>\n</function>\n</tool_call>",
+		"<tool_call>\n<function=read>\n<path><nested>x</nested></path>\n</function>\n</tool_call>",
+		"<tool_call>\n<function=read>\n<path>x</wrong>\n</function>\n</tool_call>",
+	];
+
+	for (const value of rejected) {
+		assert.equal(parseToolEnvelope(value, allowedTools), undefined, value);
+	}
+});
+
+test("rejects unsafe named-tool args wrapper variants", () => {
+	const rejected = [
+		'<tool_call>\n<delete_everything>{}</delete_everything>',
+		'<tool_call>\n<read>[]</read>',
+		'<tool_call>\n<read>{"constructor":{"prototype":{"polluted":true}}}</read>',
+		'<tool_call>\n<read>{}</write>',
+		'<tool_call>\n<read>{}</read> trailing',
 	];
 
 	for (const value of rejected) {
@@ -132,7 +190,6 @@ test("rejects prose, Markdown fences, arrays and malformed JSON", () => {
 		'Planning without a delimiter. {"tool":"read","args":{"path":"README.md"}}',
 		'Planning.\n</think>\n{"tool":"read","args":{}}\n{"tool":"write","args":{}}',
 		'Planning.\n</think>\n{"tool":"read","args":{}} trailing prose',
-		'<tool_call>\n{"tool":"read","args":{}}',
 		'<tool_call>\n{"tool":"read","args":{}}\n</tool_call>\n</tool_call>',
 		'<tool_call>\n{"tool":"read","args":{}}\n</invoke>\n</parameter>\n</function>\n</tool_call>\n</tool_call>',
 		'<tool_call>\n<read>\n<parameter=path>\nREADME.md\n</parameter>\n</function>\n</tool_call>',
