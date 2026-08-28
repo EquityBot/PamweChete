@@ -81,6 +81,30 @@ test("accepts the model's exact single-parameter bash markup", () => {
 	);
 });
 
+test("accepts the model's exact function args wrapper", () => {
+	assert.deepEqual(
+		parseToolEnvelope(
+			'<tool_call>\n<function=read>\n<parameter=args>\n{"path":"package.json"}\n</function>\n</tool_call>',
+			allowedTools,
+		),
+		{ name: "read", arguments: { path: "package.json" } },
+	);
+});
+
+test("rejects unsafe function args wrapper variants", () => {
+	const rejected = [
+		'<tool_call>\n<function=delete_everything>\n<parameter=args>\n{}\n</function>\n</tool_call>',
+		'<tool_call>\n<function=read>\n<parameter=args>\n[]\n</function>\n</tool_call>',
+		'<tool_call>\n<function=read>\n<parameter=args>\n{"constructor":{"prototype":{"polluted":true}}}\n</function>\n</tool_call>',
+		'<tool_call>\n<function=read>\n<parameter=args>\n{}\n<parameter=args>\n{}\n</function>\n</tool_call>',
+		'<tool_call>\n<function=read>\n<parameter=args>\n{}\n</parameter>\n</function>\n</tool_call>',
+	];
+
+	for (const value of rejected) {
+		assert.equal(parseToolEnvelope(value, allowedTools), undefined, value);
+	}
+});
+
 test("accepts one final envelope after a separate prose paragraph", () => {
 	assert.deepEqual(
 		parseToolEnvelope(

@@ -165,7 +165,7 @@ The initial global settings will include:
 - model cycling limited to the requested model
 - project trust left at `ask`
 - install telemetry disabled
-- agent retries enabled with at most two retries and provider-level retries disabled
+- three state-preserving agent retries after 5, 10 and 20 seconds, plus two provider-request retries with server-directed delays capped at 30 seconds
 - a provider timeout long enough for a 4,096-token response without allowing an indefinite wait
 - auto-compaction enabled
 

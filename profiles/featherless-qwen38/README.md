@@ -8,6 +8,7 @@ This profile configures Pi for `OBLITERATUS/Qwen3.8-27B-OBLITERATED` through Fea
 - Maximum advertised context: 32,768 tokens, lowered when the authenticated plan reports a smaller limit
 - Baseline sampling: temperature `0`, repetition penalty `1.15`, parallel tool calls disabled
 - Thinking: off at both Pi and chat-template levels; `enable_thinking: false` prevents the endpoint from leaking generated reasoning ahead of text-tool envelopes
+- Reliability: two provider-request retries with server-directed delays capped at 30 seconds, plus three state-preserving agent retries after 5, 10 and 20 seconds
 - Extensions: ask-user-question, bash-guard, the bounded Featherless text-tool bridge, custom header and prompt snippets
 - Network, browser, memory and subagent extensions: not loaded by default
 
@@ -21,6 +22,8 @@ The 2026-08-28 live benchmark on Pi 0.84.3 selected the expanded surface:
 multi-step create-and-verify fixtures with 10 tool calls, zero invalid calls
 and zero repeated calls. The lean surface passed the first two fixtures but
 did not complete the multi-step fixture in the selection run.
+
+A repeated live smoke pass later observed Featherless return transient capacity errors after partial tool progress. Pi's request retry implementation safely retries 429 and 5xx responses before a stream begins, while its agent retry path retains completed tool results and continues from the same state. The final profile therefore enables two provider retries, caps a server-requested delay at 30 seconds, and gives a longer 35-second agent backoff window.
 
 The authenticated Featherless endpoint currently reports native tool calling
 as unavailable for this model and returns attempted calls as ordinary text.

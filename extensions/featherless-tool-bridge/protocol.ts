@@ -70,6 +70,26 @@ function parseObservedBashMarkup(text: string, allowedTools: Set<string>): Parse
 	return { name: "bash", arguments: { command } };
 }
 
+function parseObservedFunctionArgsMarkup(text: string, allowedTools: Set<string>): ParsedToolEnvelope | undefined {
+	const match = text.match(
+		/^<tool_call>\s*<function=([A-Za-z_][A-Za-z0-9_-]*)>\s*<parameter=args>\s*(\{[\s\S]*\})\s*<\/function>\s*<\/tool_call>$/,
+	);
+	const name = match?.[1];
+	if (!name || !allowedTools.has(name)) {
+		return undefined;
+	}
+	let argumentsValue: unknown;
+	try {
+		argumentsValue = JSON.parse(match[2]);
+	} catch {
+		return undefined;
+	}
+	if (!isPlainObject(argumentsValue) || hasUnsafeKey(argumentsValue)) {
+		return undefined;
+	}
+	return { name, arguments: argumentsValue };
+}
+
 function unwrapObservedJsonToolCall(text: string): string | undefined {
 	const malformedClosers = text.match(
 		/^<tool_call>\s*(\{[\s\S]*\})\s*<\/invoke>\s*<\/parameter>\s*<\/function>\s*<\/tool_call>$/,
@@ -87,6 +107,10 @@ export function parseToolEnvelope(text: string, allowedTools: Iterable<string>):
 	}
 	const allowedToolSet = new Set(allowedTools);
 	let candidate = text.trim();
+	const directFunctionArgsMarkup = parseObservedFunctionArgsMarkup(candidate, allowedToolSet);
+	if (directFunctionArgsMarkup) {
+		return directFunctionArgsMarkup;
+	}
 	const directBashMarkup = parseObservedBashMarkup(candidate, allowedToolSet);
 	if (directBashMarkup) {
 		return directBashMarkup;

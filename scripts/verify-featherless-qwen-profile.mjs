@@ -127,8 +127,25 @@ function validateSettings(settings, profileDirectory) {
 	assert.equal(settings.compaction?.reserveTokens, 6144, "Compaction reserve differs");
 	assert.equal(settings.compaction?.keepRecentTokens, 10000, "Recent-context retention differs");
 	assert.equal(settings.retry?.enabled, true, "Agent retry must be enabled");
-	assert.equal(settings.retry?.maxRetries, 2, "Agent retry count differs");
-	assert.equal(settings.retry?.provider?.maxRetries, 0, "Provider retries must be disabled");
+	const agentRetryCount = settings.retry?.maxRetries;
+	const agentRetryBaseDelayMs = settings.retry?.baseDelayMs;
+	assert.ok(
+		Number.isInteger(agentRetryCount) && agentRetryCount >= 1 && agentRetryCount <= 5 &&
+			Number.isInteger(agentRetryBaseDelayMs) && agentRetryBaseDelayMs >= 1000,
+		"Agent retry policy is malformed",
+	);
+	const agentRetryWindowMs = agentRetryBaseDelayMs * (2 ** agentRetryCount - 1);
+	assert.ok(
+		agentRetryWindowMs >= 35000 && agentRetryWindowMs <= 60000,
+		"Agent retry window must be between 35 and 60 seconds",
+	);
+	assert.equal(settings.retry?.provider?.maxRetries, 2, "Provider retries must handle transient capacity failures");
+	assert.ok(
+		Number.isInteger(settings.retry?.provider?.maxRetryDelayMs) &&
+			settings.retry.provider.maxRetryDelayMs > 0 &&
+			settings.retry.provider.maxRetryDelayMs <= 30000,
+		"Provider retry delay must be bounded to 30 seconds",
+	);
 
 	assertExactPaths(settings.extensions, [
 		join(ROOT, "extensions", "ask-user-question.ts"),

@@ -63,7 +63,12 @@ function createValidProfile(parent) {
 		defaultProjectTrust: "ask",
 		enableInstallTelemetry: false,
 		compaction: { enabled: true, reserveTokens: 6144, keepRecentTokens: 10000 },
-		retry: { enabled: true, maxRetries: 2, provider: { maxRetries: 0 } },
+		retry: {
+			enabled: true,
+			maxRetries: 3,
+			baseDelayMs: 5000,
+			provider: { maxRetries: 2, maxRetryDelayMs: 30000 },
+		},
 		extensions: [
 			toConfigPath(join(ROOT, "extensions", "ask-user-question.ts")),
 			toConfigPath(join(ROOT, "extensions", "bash-guard")),
@@ -152,4 +157,46 @@ test("rejects a benchmark tool surface with the question tool omitted", (context
 	const result = runVerifier(profile);
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /defaultTools/i);
+});
+
+test("rejects a profile that disables transient provider retries", (context) => {
+	const parent = mkdtempSync(join(tmpdir(), "pi-profile-provider-retry-"));
+	context.after(() => rmSync(parent, { recursive: true, force: true }));
+	const profile = createValidProfile(parent);
+	const settingsPath = join(profile, "settings.windows.json");
+	const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	settings.retry.provider.maxRetries = 0;
+	writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+	const result = runVerifier(profile);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /provider retries/i);
+});
+
+test("rejects a provider retry delay above the interactive bound", (context) => {
+	const parent = mkdtempSync(join(tmpdir(), "pi-profile-provider-delay-"));
+	context.after(() => rmSync(parent, { recursive: true, force: true }));
+	const profile = createValidProfile(parent);
+	const settingsPath = join(profile, "settings.windows.json");
+	const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	settings.retry.provider.maxRetryDelayMs = 60001;
+	writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+	const result = runVerifier(profile);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /retry delay/i);
+});
+
+test("rejects an agent retry window shorter than the observed capacity period", (context) => {
+	const parent = mkdtempSync(join(tmpdir(), "pi-profile-agent-retry-"));
+	context.after(() => rmSync(parent, { recursive: true, force: true }));
+	const profile = createValidProfile(parent);
+	const settingsPath = join(profile, "settings.windows.json");
+	const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	settings.retry.maxRetries = 2;
+	writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+	const result = runVerifier(profile);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /retry window/i);
 });

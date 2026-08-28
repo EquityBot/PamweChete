@@ -360,7 +360,7 @@ Set effective context to `min(planContextLimit, modelContextLimit, 32768)`. At 3
 
 - [ ] **Step 3: Write non-secret models, settings and AGENTS files**
 
-Use `apply_patch`, preserve `lastChangelogVersion`, set default project trust to `ask`, install telemetry false, retries two, provider retries zero, and reference only selected fork resources. Use the lean candidate as the temporary default; the benchmark will replace it if expanded wins.
+Use `apply_patch`, preserve `lastChangelogVersion`, set default project trust to `ask`, install telemetry false, three state-preserving agent retries after 5, 10 and 20 seconds, two provider-request retries with server-directed delays capped at 30 seconds, and reference only selected fork resources. Use the lean candidate as the temporary default; the benchmark will replace it if expanded wins.
 
 - [ ] **Step 4: Transfer the credential and verify its ACL**
 

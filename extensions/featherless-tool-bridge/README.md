@@ -26,6 +26,12 @@ One additional learned model form is accepted only for `bash`: a single exact
 closing tags. It cannot name another tool or add another parameter, and the
 resulting command still passes through bash-guard.
 
+The bridge also accepts the observed generic form
+`<tool_call><function=NAME><parameter=args>{…}</function></tool_call>`. `NAME`
+must be one currently active tool and the parameter body must be exactly one
+JSON object. Unknown tools, arrays, duplicate parameters, mismatched closers
+and prototype-polluting keys are rejected.
+
 The parser also recognises one fixed legacy closer sequence observed around a
 single JSON envelope. Extra or repeated closers and missing outer tags are not
 accepted.
