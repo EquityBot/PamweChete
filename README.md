@@ -17,6 +17,16 @@ Some extensions are big enough to live in their own repositories:
 
 This repo contains everything else.
 
+## Featherless Qwen coding profile
+
+[`profiles/featherless-qwen38/`](profiles/featherless-qwen38/) is a tested Windows profile for
+`featherless/OBLITERATUS/Qwen3.8-27B-OBLITERATED`. It includes a compact coding agreement,
+deterministic sampling defaults, prompt templates, a benchmark-selected tool surface and a
+structural verifier.
+
+Credentials do not belong in this repository. Keep the Featherless key only in Pi's private
+`~/.pi/agent/auth.json` store; never add it to `models.json`, settings, examples or documentation.
+
 ## Copy an extension
 
 Single-file extension:

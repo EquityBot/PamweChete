@@ -1,0 +1,38 @@
+{
+  "providers": {
+    "featherless": {
+      "baseUrl": "https://api.featherless.ai/v1",
+      "api": "openai-completions",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "maxTokensField": "max_tokens",
+        "requiresToolResultName": true,
+        "supportsStrictMode": false
+      },
+      "models": [
+        {
+          "id": "OBLITERATUS/Qwen3.8-27B-OBLITERATED",
+          "name": "Qwen3.8 27B OBLITERATED (Featherless)",
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "contextWindow": 32768,
+          "maxTokens": 4096,
+          "samplingParams": {
+            "temperature": 0,
+            "repetition_penalty": 1.15,
+            "parallel_tool_calls": false
+          },
+          "cost": {
+            "input": 0.265,
+            "output": 0.65,
+            "cacheRead": 0.15,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    }
+  }
+}
