@@ -1,6 +1,8 @@
-# pi-config
+# PamweChete
 
 This fork preserves Amos Blomqvist's original pi-config and its first-person narrative, with Ryan Duguid's additions layered on top.
+
+Clone: `https://github.com/ryanduguid/PamweChete.git`
 
 [![video](assets/thumbnail.png)](https://www.youtube.com/@EeroAlvar)
 
