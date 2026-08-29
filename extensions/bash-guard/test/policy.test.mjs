@@ -191,3 +191,113 @@ test("headless mode blocks repository mutations reserved for the main session", 
 	assert.match(headlessBlockReason("git commit -m update") ?? "", /git commit/i);
 	assert.match(headlessBlockReason("git push") ?? "", /git push/i);
 });
+
+test("Git options that name an external program require approval", () => {
+	const commands = [
+		"git ls-remote --upload-pack=/tmp/evil.sh .",
+		"git grep -O/tmp/evil.sh pattern",
+		"git -c diff.external=/tmp/evil.sh diff HEAD~1 HEAD",
+		"GIT_EXTERNAL_DIFF=/tmp/evil.sh git diff HEAD~1 HEAD",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /external program|named program|config injection|pipes matches/i, command);
+	}
+});
+
+test("silent command execution through Git is blocked where there is no prompt", () => {
+	const commands = [
+		"git ls-remote --upload-pack=/tmp/evil.sh .",
+		"git grep -O/tmp/evil.sh pattern",
+		"git -c diff.external=/tmp/evil.sh diff HEAD~1 HEAD",
+		"GIT_EXTERNAL_DIFF=/tmp/evil.sh git diff HEAD~1 HEAD",
+		"env GIT_EXTERNAL_DIFF=/tmp/evil.sh git diff HEAD~1 HEAD",
+		"git ls-remote ext::sh -c evil",
+		"git --exec-path=/tmp/evil status",
+	];
+
+	for (const command of commands) {
+		assert.ok(disabledModeBlockReason(command), command);
+		assert.ok(headlessBlockReason(command), command);
+	}
+});
+
+test("Git global options do not defeat the catastrophic floor", () => {
+	const cases = [
+		["git -C /other/repo push --force origin main", /force/i],
+		["git -C /other/repo reset --hard", /reset --hard/i],
+		["git -C . clean -fdx", /clean/i],
+	];
+
+	for (const [command, expected] of cases) {
+		assert.match(disabledModeBlockReason(command) ?? "", expected, command);
+		assert.match(headlessBlockReason(command) ?? "", expected, command);
+	}
+});
+
+test("config injection does not hide a headless-blocked subcommand", () => {
+	assert.match(headlessBlockReason("git -c user.name=x commit -m y") ?? "", /git commit/i);
+	assert.match(headlessBlockReason("git -C /other/repo push origin main") ?? "", /git push/i);
+});
+
+test("a quoted dd target is still a raw disk write", () => {
+	assert.match(disabledModeBlockReason('dd if=/dev/zero of="/dev/sda"') ?? "", /raw disk write/i);
+	assert.match(headlessBlockReason("dd if=/dev/zero of='/dev/sda'") ?? "", /raw disk write/i);
+});
+
+test("output options that write files require approval on every diff-like subcommand", () => {
+	const commands = [
+		"git log --output=x.patch",
+		"git show --output=x.patch",
+		"git diff-tree --output=x.patch",
+		"git diff --output=x.patch",
+		"git format-patch --output=x.patch",
+	];
+
+	for (const command of commands) {
+		assert.equal(analyzeBashCommand(command)?.severity, "medium", command);
+	}
+});
+
+test("read-only Git allowlist entries reject write and transport options", () => {
+	const commands = [
+		"git branch -u origin/main",
+		"git branch --set-upstream-to origin/main",
+		"git config --get x --unset y",
+		"git tag --list -d v1",
+		"git remote -v add mirror https://example.com/repo.git",
+		"git ls-remote ext::sh -c evil",
+		"git fetch --upload-pack=/tmp/evil.sh origin",
+		"git push --receive-pack=/tmp/evil.sh origin",
+		"git --exec-path=/tmp/evil status",
+		"GIT_SSH_COMMAND=/tmp/evil.sh git ls-remote origin",
+		"git -c core.pager=/tmp/evil.sh log",
+	];
+
+	for (const command of commands) {
+		assert.notEqual(analyzeBashCommand(command), null, command);
+	}
+});
+
+test("routine Git inspection with benign globals and env stays silent", () => {
+	const commands = [
+		"git -c color.ui=false log --oneline",
+		"git -c core.pager=cat log",
+		"git -c user.name=x -c user.email=y log",
+		"GIT_PAGER=cat git log",
+		"GIT_EDITOR=true git log",
+		"git --no-optional-locks status",
+		"git -P status",
+		"git -C /repo status",
+		"git ls-files -o --exclude-standard",
+		"git log --diff-filter=A --name-only",
+		"git ls-remote --exit-code origin main",
+		"git config --global --get user.name",
+	];
+
+	for (const command of commands) {
+		assert.equal(analyzeBashCommand(command), null, command);
+	}
+});

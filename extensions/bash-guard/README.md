@@ -13,6 +13,13 @@ which pi-subagents injects into every spawned process.
 - Heuristically detects destructive/questionable commands via shell-aware parsing
 - Allows read-only Git inspection without interruption (`status`, `diff`, `log`, `show`,
   `rev-parse`, `remote -v`, and list/query forms)
+- Treats Git options and variables that name an external program as command execution rather
+  than inspection: `-c <key>=<value>` and `--config-env` config injection, `--exec-path=`,
+  `--upload-pack`/`--receive-pack`, `git grep -O`, `ext::` transport URLs, `--output` on the
+  diff family, and `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`, `LD_PRELOAD` and similar leading
+  environment assignments
+- Fails closed: an unrecognised subcommand, or an option on a read-only subcommand whose name
+  reads like it takes a program or an output file, escalates to a prompt
 - Prompts for Git operations that change repository or remote state, escalating destructive
   operations such as `git reset --hard`, `git clean -fdx`, and `git push --force`
 - Prompts for disk/volume tooling: `diskutil`, `hdiutil`, `mkfs*`, `newfs_*`, `wipefs`, `parted`,
@@ -29,7 +36,11 @@ which pi-subagents injects into every spawned process.
 ### Subagent (`PI_SUBAGENT_DEPTH` ≥ 1) — headless hard-block
 
 Spawned subagents have no UI (stdin is `/dev/null`), so prompting is impossible. Instead,
-a focused set of catastrophic/unrecoverable operations is hard-blocked with no user interaction:
+a focused set of catastrophic/unrecoverable operations is blocked with no user interaction.
+The command is tokenised first and the Git subcommand is identified positionally after the
+global options, so `git -C /other/repo push --force` and `dd if=/dev/zero of="/dev/sda"` are
+classified the same way as their bare forms. The floor is a denylist, so it is best effort
+rather than a guarantee:
 
 | Pattern | Reason |
 |---|---|
@@ -54,6 +65,9 @@ a focused set of catastrophic/unrecoverable operations is hard-blocked with no u
 | `git clean -f` | Delete untracked files |
 | `git reflog expire` | Remove recovery history |
 | `git gc --prune` | Prune unreachable objects |
+| `git -c <key>=<program>`, `--config-env`, `--exec-path=` | Git config injection naming a program |
+| `GIT_EXTERNAL_DIFF=…`, `GIT_SSH_COMMAND=…`, `LD_PRELOAD=…` | Environment variable naming a program |
+| `--upload-pack`, `--receive-pack`, `git grep -O`, `ext::` | Externally named program on a Git command |
 
 All other commands (including routine git operations) pass through unaffected.
 

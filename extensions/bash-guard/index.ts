@@ -83,7 +83,7 @@ export default function bashGuard(pi: ExtensionAPI) {
 		default: false,
 	});
 	pi.registerFlag("bash-guard-disabled", {
-		description: "Start with interactive prompts disabled; the catastrophic hard-block floor remains active.",
+		description: "Start with interactive prompts disabled; the best-effort catastrophic floor remains active.",
 		type: "boolean",
 		default: false,
 	});
@@ -109,7 +109,7 @@ export default function bashGuard(pi: ExtensionAPI) {
 			if (disabled) {
 				showDisabledStatus(ctx);
 				ctx.ui.notify(
-					"bash-guard disabled for this session. Catastrophic operations remain hard-blocked. Run /bash-guard again to re-enable prompts.",
+					"bash-guard disabled for this session. A catastrophic floor still blocks the operations it recognises, but it is a best-effort denylist and not a guarantee. Run /bash-guard again to re-enable prompts.",
 					"warning",
 				);
 				return;

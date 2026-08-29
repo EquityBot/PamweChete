@@ -31,6 +31,30 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Set([
 	"version",
 ]);
 
+const BENIGN_EXEC_VALUES = new Set(["cat", "true", "false", ":", "/bin/cat", "/bin/true", "/bin/false", "/usr/bin/cat"]);
+
+// Environment variables that hand git (or the loader) a program to run. A leading assignment is
+// part of the command, not decoration, so it is retained and classified.
+const EXEC_ENV_VARS = new Set([
+	"GIT_EXTERNAL_DIFF", "GIT_PAGER", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "GIT_SSH", "GIT_SSH_COMMAND",
+	"GIT_PROXY_COMMAND", "GIT_ASKPASS", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+	"LD_PRELOAD", "LD_AUDIT", "DYLD_INSERT_LIBRARIES", "BASH_ENV", "ENV", "PERL5OPT", "PYTHONSTARTUP",
+	"NODE_OPTIONS",
+]);
+
+function envExecReason(prefixTokens) {
+	for (const token of prefixTokens) {
+		const eq = token.indexOf("=");
+		if (eq <= 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(token.slice(0, eq))) continue;
+		const name = token.slice(0, eq).toUpperCase();
+		if (!EXEC_ENV_VARS.has(name) && !/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(name)) continue;
+		if (BENIGN_EXEC_VALUES.has(token.slice(eq + 1))) continue;
+		return `${name} (environment variable naming an external program)`;
+	}
+	return null;
+}
+
 const ENV_OPTIONS_WITH_VALUES = new Set(["-u", "--unset", "-C", "--chdir"]);
 const ENV_SPLIT_STRING_COMMAND = -1;
 const ENV_SPLIT_STRING_PIPE_COMMAND = "env-split-string";
@@ -108,38 +132,96 @@ function anyArgStartsWith(args, prefix) {
 	return args.some((arg) => arg.startsWith(prefix));
 }
 
+const GIT_GLOBAL_VALUE_OPTIONS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env"]);
+const GIT_GLOBAL_VALUE_PREFIX = /^--(?:git-dir|work-tree|namespace|super-prefix|exec-path|config-env)=/;
+const GIT_GLOBAL_FLAGS = new Set([
+	"--bare", "--no-pager", "--paginate", "-p", "-P", "--exec-path", "--no-replace-objects", "--no-optional-locks",
+	"--no-lazy-fetch", "--no-advice", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs",
+]);
+
+// Config keys that cannot name a program, a path or a URL. Anything outside this list is treated
+// as command execution, so an unknown or novel key fails closed.
+const BENIGN_CONFIG_KEYS = new Set([
+	"user.name", "user.email", "user.signingkey", "protocol.version", "core.quotepath", "core.abbrev",
+	"core.autocrlf", "core.safecrlf", "core.ignorecase", "core.filemode", "core.longpaths", "core.precomposeunicode",
+	"core.commitgraph", "core.bare", "diff.noprefix", "diff.algorithm", "diff.renames", "diff.mnemonicprefix",
+	"log.date", "log.showsignature", "status.short", "push.default", "pull.rebase", "fetch.prune", "gc.auto",
+	"commit.gpgsign", "tag.gpgsign", "rebase.autostash", "init.defaultbranch", "safe.directory", "grep.linenumber",
+]);
+
+function configKeyIsBenign(key) {
+	const lower = key.toLowerCase();
+	return lower.startsWith("color.") || lower.startsWith("advice.") || BENIGN_CONFIG_KEYS.has(lower);
+}
+
+// Retains the global options instead of discarding them, so `-c key=value`, `--config-env` and
+// `--exec-path=` stay visible to classification and the subcommand is found positionally after them.
 function gitCommandParts(args) {
 	let index = 0;
-	const optionsWithValues = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"]);
+	const globals = [];
 	while (index < args.length) {
 		const arg = args[index];
-		if (optionsWithValues.has(arg)) {
+		if (GIT_GLOBAL_VALUE_OPTIONS.has(arg)) {
+			globals.push(arg, args[index + 1] ?? "");
 			index += 2;
 			continue;
 		}
-		if (/^--(?:git-dir|work-tree|namespace|super-prefix)=/.test(arg)) {
-			index += 1;
-			continue;
-		}
-		if (["--bare", "--no-pager", "--paginate", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs"].includes(arg)) {
+		if (GIT_GLOBAL_VALUE_PREFIX.test(arg) || GIT_GLOBAL_FLAGS.has(arg)) {
+			globals.push(arg);
 			index += 1;
 			continue;
 		}
 		break;
 	}
-	return { subcommand: args[index], subArgs: args.slice(index + 1) };
+	return { globals, subcommand: args[index], subArgs: args.slice(index + 1) };
+}
+
+function gitGlobalExecReason(globals) {
+	for (let index = 0; index < globals.length; index += 1) {
+		const arg = globals[index];
+		if (arg.startsWith("--exec-path=")) return "git --exec-path= (relocates the git program directory)";
+		let setting = null;
+		if (arg === "-c" || arg === "--config-env") setting = globals[index + 1] ?? "";
+		else if (arg.startsWith("--config-env=")) setting = arg.slice("--config-env=".length);
+		if (setting === null) continue;
+		const eq = setting.indexOf("=");
+		const key = eq === -1 ? setting : setting.slice(0, eq);
+		if (configKeyIsBenign(key) || (eq !== -1 && BENIGN_EXEC_VALUES.has(setting.slice(eq + 1)))) continue;
+		return `git -c ${key} (config injection that can name an external program)`;
+	}
+	return null;
+}
+
+const GIT_PACK_OPTION = /^--(?:upload-pack|receive-pack)(?:=|$)/;
+// ponytail: name-shaped net over options we do not enumerate per subcommand. It catches option
+// names that read like they take a program or an output file; a novel option with an innocuous
+// name still slips. Upgrade path is a per-subcommand read-only option allowlist.
+const GIT_SUSPECT_OPTION = /exec|pager|editor|askpass|ssh|proxy|hook|upload-pack|receive-pack|external|output/i;
+
+function gitOptionExecReason(subcommand, subArgs) {
+	for (const arg of subArgs) {
+		if (GIT_PACK_OPTION.test(arg)) return `git ${subcommand} --upload-pack/--receive-pack (runs a named program)`;
+		if (arg.startsWith("ext::")) return `git ${subcommand} ext:: transport URL (runs an arbitrary program)`;
+		if (subcommand === "grep" && /^-[^-]*O/.test(arg)) return "git grep -O (pipes matches into a named program)";
+	}
+	return null;
 }
 
 function isReadOnlyGitCommand(args) {
-	const { subcommand, subArgs } = gitCommandParts(args);
+	const { globals, subcommand, subArgs } = gitCommandParts(args);
+	if (gitGlobalExecReason(globals)) return false;
 	if (!subcommand || subcommand === "--help" || subcommand === "--version") return true;
+	if (gitOptionExecReason(subcommand, subArgs)) return false;
 	const optionEnd = subArgs.indexOf("--");
 	const optionArgs = optionEnd === -1 ? subArgs : subArgs.slice(0, optionEnd);
-	if (subcommand === "diff" && optionArgs.some((arg) => arg === "--output" || arg.startsWith("--output="))) return false;
+	if (optionArgs.some((arg) => arg === "--output" || arg.startsWith("--output="))) return false;
 	if (subcommand === "fsck" && optionArgs.includes("--lost-found")) return false;
-	if (READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return true;
+	if (READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) {
+		return !optionArgs.some((arg) => arg.startsWith("-") && GIT_SUSPECT_OPTION.test(arg.split("=", 1)[0]));
+	}
 
 	if (subcommand === "remote") {
+		if (subArgs.some((arg) => ["add", "remove", "rm", "rename", "set-url", "set-head", "set-branches", "prune", "update"].includes(arg))) return false;
 		return subArgs.length === 0 || ["-v", "--verbose", "get-url", "show"].includes(subArgs[0]);
 	}
 	if (subcommand === "stash") return ["list", "show"].includes(subArgs[0]);
@@ -149,22 +231,36 @@ function isReadOnlyGitCommand(args) {
 	if (subcommand === "branch") {
 		if (subArgs.length === 0) return true;
 		const mutating = new Set([
-			"-d", "-D", "-m", "-M", "-c", "-C", "-f", "--delete", "--move", "--copy", "--force",
-			"--edit-description", "--set-upstream-to", "--unset-upstream", "--track", "--no-track",
+			"--delete", "--move", "--copy", "--force", "--edit-description",
+			"--set-upstream", "--set-upstream-to", "--unset-upstream", "--track", "--no-track",
 		]);
-		if (subArgs.some((arg) => mutating.has(arg) || arg.startsWith("--set-upstream-to="))) return false;
+		if (subArgs.some((arg) => mutating.has(arg) || arg.startsWith("--set-upstream-to=") || arg.startsWith("--track="))) return false;
+		if (["d", "D", "m", "M", "c", "C", "f", "u", "t"].some((flag) => hasShortFlag(subArgs, flag))) return false;
 		return subArgs[0].startsWith("-");
 	}
 
 	if (subcommand === "tag") {
 		if (subArgs.length === 0) return true;
+		if (["d", "a", "s", "f", "m", "F", "e", "u"].some((flag) => hasShortFlag(subArgs, flag))) return false;
+		if (subArgs.some((arg) =>
+			["--delete", "--force", "--annotate", "--sign", "--message", "--file", "--edit", "--create-reflog", "--local-user", "--cleanup"].includes(arg) ||
+			arg.startsWith("--message=") || arg.startsWith("--file=") || arg.startsWith("--local-user=") || arg.startsWith("--cleanup="),
+		)) return false;
 		return ["-l", "--list", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"].includes(subArgs[0]);
 	}
 
 	if (subcommand === "config") {
-		return subArgs.some((arg) =>
-			["--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l", "--show-origin", "--show-scope"].includes(arg),
-		) || subArgs[0] === "get" || subArgs[0] === "list";
+		const write = new Set([
+			"--unset", "--unset-all", "--add", "--replace-all", "--edit", "-e", "--rename-section", "--remove-section",
+			"set", "unset", "unset-all", "add", "edit", "rename-section", "remove-section",
+		]);
+		if (subArgs.some((arg) => write.has(arg))) return false;
+		const read = new Set([
+			"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool",
+			"--list", "-l", "--show-origin", "--show-scope", "--show-names",
+		]);
+		if (subArgs.some((arg) => read.has(arg))) return true;
+		return ["get", "list"].includes(subArgs[0]);
 	}
 
 	return false;
@@ -200,6 +296,9 @@ function analyzeSegment(segment) {
 	const cmd = commandName(segment[index]);
 	const rest = tokensToStrings(segment.slice(index + 1));
 
+	const envReason = envExecReason(tokensToStrings(segment.slice(0, index)));
+	if (envReason) reasons.push(envReason);
+
 	if (cmd === "sudo") {
 		reasons.push("sudo (elevated privileges)");
 		severity = "high";
@@ -218,8 +317,10 @@ function analyzeSegment(segment) {
 	}
 
 	if (cmd === "git") {
-		const { subcommand, subArgs } = gitCommandParts(rest);
-		if (!isReadOnlyGitCommand(rest)) {
+		const { globals, subcommand, subArgs } = gitCommandParts(rest);
+		const execReason = gitGlobalExecReason(globals) ?? gitOptionExecReason(subcommand, subArgs);
+		if (execReason) reasons.push(execReason);
+		else if (!isReadOnlyGitCommand(rest)) {
 			reasons.push(subcommand ? `git ${subcommand} (repository state change)` : "git (repository command)");
 		}
 		if (subcommand === "rm") {
@@ -372,6 +473,74 @@ export const HEADLESS_BLOCKED = [
 
 export const MAIN_DISABLED_BLOCKED = [...CATASTROPHIC_BLOCKED];
 
+function catastrophicGitReason(args) {
+	const { globals, subcommand, subArgs } = gitCommandParts(args);
+	const execReason = gitGlobalExecReason(globals) ?? gitOptionExecReason(subcommand, subArgs);
+	if (execReason) return execReason;
+	if (subcommand === "push" && (hasShortFlag(subArgs, "f") || anyArgStartsWith(subArgs, "--force"))) return "git push --force (rewrites remote history)";
+	if (subcommand === "reset" && subArgs.includes("--hard")) return "discard all uncommitted changes (git reset --hard)";
+	if (subcommand === "clean" && (hasShortFlag(subArgs, "f") || subArgs.includes("--force"))) return "delete untracked files (git clean -f)";
+	if (subcommand === "reflog" && subArgs.includes("expire")) return "expire reflog (removes recovery history)";
+	if (subcommand === "gc" && anyArgStartsWith(subArgs, "--prune")) return "prune unreachable objects (git gc --prune)";
+	return null;
+}
+
+function catastrophicSegmentReason(segment) {
+	const index = commandIndex(segment);
+	if (index === null || index === ENV_SPLIT_STRING_COMMAND) return null;
+	const envReason = envExecReason(tokensToStrings(segment.slice(0, index)));
+	if (envReason) return envReason;
+	const cmd = commandName(segment[index]);
+	const rest = tokensToStrings(segment.slice(index + 1));
+
+	if (cmd === "git") return catastrophicGitReason(rest);
+	if (cmd === "sudo") return "elevated privileges (sudo)";
+	if (cmd === "rm" && (hasShortFlag(rest, "r") || hasShortFlag(rest, "R") || rest.includes("--recursive"))) return "recursive delete (rm -r / -rf / -Rf)";
+	if (cmd === "find" && rest.includes("-delete")) return "bulk deletion (find -delete)";
+	if (cmd === "dd" && rest.some((arg) => arg.startsWith("of=/dev/"))) return "raw disk write (dd of=/dev/...)";
+	if (cmd.startsWith("mkfs")) return "filesystem formatting (mkfs)";
+	if (cmd.startsWith("newfs_")) return "filesystem formatting (newfs_*)";
+	if (cmd === "wipefs") return "disk signature wipe";
+	if (cmd === "diskutil" && rest.some((arg) => /^(?:erase|zeroDisk|secureErase|reformat)/i.test(arg))) return "destructive disk operation (diskutil)";
+	if (["parted", "fdisk", "gdisk", "sgdisk"].includes(cmd)) return "partition table management";
+	if (cmd === "cryptsetup") return "disk encryption management";
+	if (cmd === "zpool") return "ZFS pool management";
+	if (["shutdown", "reboot", "halt", "poweroff"].includes(cmd)) return "system power operation";
+	if (cmd === "terraform" && rest.includes("destroy")) return "infrastructure teardown (terraform destroy)";
+	if (cmd === "kubectl" && rest.includes("delete")) return "Kubernetes resource deletion";
+	if (cmd === "aws" && rest[0] === "s3" && rest[1] === "rm" && rest.includes("--recursive")) return "bulk S3 deletion (aws s3 rm --recursive)";
+	return null;
+}
+
+const HEADLESS_GIT_SUBCOMMANDS = new Map([
+	["commit", "git commit (commits are main-session operations)"],
+	["pull", "git pull (pulls are main-session operations)"],
+	["push", "git push (pushes are main-session operations)"],
+]);
+
+// Parses first, then classifies. The regex list below is kept only as a second net for text the
+// tokeniser drops (quoted `bash -c "..."` payloads and the like).
+function parsedBlockReason(command, headless) {
+	let tokens;
+	try {
+		tokens = shellParse(command);
+	} catch {
+		return "unparseable shell command (cannot verify safety)";
+	}
+	for (const segment of splitOnOps(tokens, ["&&", "||", ";", "|"])) {
+		const reason = catastrophicSegmentReason(segment);
+		if (reason) return reason;
+		if (!headless) continue;
+		const index = commandIndex(segment);
+		if (index === null || index === ENV_SPLIT_STRING_COMMAND) continue;
+		if (commandName(segment[index]) !== "git") continue;
+		const { subcommand } = gitCommandParts(tokensToStrings(segment.slice(index + 1)));
+		const headlessReason = HEADLESS_GIT_SUBCOMMANDS.get(subcommand);
+		if (headlessReason) return headlessReason;
+	}
+	return null;
+}
+
 function findBlockedReason(command, rules) {
 	for (const { pattern, reason } of rules) {
 		if (pattern.test(command)) return reason;
@@ -380,9 +549,9 @@ function findBlockedReason(command, rules) {
 }
 
 export function headlessBlockReason(command) {
-	return findBlockedReason(command, HEADLESS_BLOCKED);
+	return parsedBlockReason(command, true) ?? findBlockedReason(command, HEADLESS_BLOCKED);
 }
 
 export function disabledModeBlockReason(command) {
-	return findBlockedReason(command, MAIN_DISABLED_BLOCKED);
+	return parsedBlockReason(command, false) ?? findBlockedReason(command, MAIN_DISABLED_BLOCKED);
 }
