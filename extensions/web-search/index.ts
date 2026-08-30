@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 interface SearchResult {
 	title: string;
@@ -63,7 +64,7 @@ async function googleSearch(
 	}));
 }
 
-const EXT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const EXT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const AUTH_PATH = path.join(EXT_DIR, "auth.json");
 
 function loadCredentials(): { apiKey: string; cseId: string } | null {

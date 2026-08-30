@@ -39,10 +39,10 @@ arguments, repeated envelopes and unrecognised wrappers are not executed.
 ## Windows setup
 
 1. Install Pi and verify `pi --version` matches the audited version documented by the setup.
-2. Clone this fork to the path referenced by `settings.windows.json`.
+2. Clone this fork anywhere; `settings.windows.json` records its `extensions` relative to the repository root and its `prompts` relative to this profile directory.
 3. In `extensions/bash-guard`, run `npm ci --ignore-scripts` and `npm test`.
 4. Copy `models.example.json` to `~/.pi/agent/models.json`, adapting only authenticated context-derived limits when necessary.
-5. Copy the generated settings and `AGENTS.md` to `~/.pi/agent/` without replacing `auth.json` or session data.
+5. Copy the generated settings and `AGENTS.md` to `~/.pi/agent/` without replacing `auth.json` or session data, rewriting the relative `extensions` and `prompts` entries to absolute paths inside the clone (Pi resolves paths in `~/.pi/agent/settings.json` relative to `~/.pi/agent`).
 6. Put the credential in Pi's private auth store, then run `pi --list-models featherless` before paid generation.
 7. Launch with `pi`.
 

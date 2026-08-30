@@ -67,6 +67,11 @@ function tokensToStrings(tokens) {
 	return tokens.filter((token) => typeof token === "string");
 }
 
+// Every operator that starts a new command context. Subshells (`(`/`)`) and background control
+// (`&`) are separators just as much as `&&`/`||`/`;`/`|`; leaving them out folded the commands they
+// introduce into a neighbouring segment, where they were never classified.
+const SPLIT_OPS = ["&&", "||", ";", "|", "(", ")", "&"];
+
 function splitOnOps(tokens, splitOps) {
 	const out = [];
 	let current = [];
@@ -94,6 +99,11 @@ function isEnvSplitStringOption(value) {
 
 function commandIndex(tokens, startIndex = 0) {
 	let index = startIndex;
+	// Skip operators the split list does not consume (a leading redirection, for example) so the
+	// command behind them is still classified instead of the whole segment being dropped.
+	while (index < tokens.length && isOpToken(tokens[index])) {
+		index += 1;
+	}
 	while (index < tokens.length && typeof tokens[index] === "string" && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
 		index += 1;
 	}
@@ -391,11 +401,11 @@ function analyzeSegment(segment) {
 		reasons.push(`${cmd} (system power operation)`);
 	}
 	if (cmd === "systemctl" && (rest.includes("stop") || rest.includes("disable"))) reasons.push("systemctl stop/disable (service disruption)");
-	if (cmd === "kubectl" && rest[0] === "delete") {
+	if (cmd === "kubectl" && rest.includes("delete")) {
 		severity = "high";
 		reasons.push("kubectl delete (resource deletion)");
 	}
-	if (cmd === "terraform" && rest[0] === "destroy") {
+	if (cmd === "terraform" && rest.includes("destroy")) {
 		severity = "high";
 		reasons.push("terraform destroy (infrastructure teardown)");
 	}
@@ -429,11 +439,19 @@ export function analyzeBashCommand(command) {
 		severity = "high";
 	}
 
-	for (const segment of splitOnOps(tokens, ["&&", "||", ";", "|"])) {
+	for (const segment of splitOnOps(tokens, SPLIT_OPS)) {
 		const segmentRisk = analyzeSegment(segment);
 		if (!segmentRisk) continue;
 		if (segmentRisk.severity === "high") severity = "high";
 		reasons.push(...segmentRisk.reasons);
+	}
+
+	// Same second net the headless and disabled-mode floors apply, so the interactive analyzer is
+	// never weaker than the floor that runs when there is nobody to prompt.
+	const catastrophicReason = findBlockedReason(command, CATASTROPHIC_BLOCKED);
+	if (catastrophicReason) {
+		severity = "high";
+		reasons.push(catastrophicReason);
 	}
 
 	const uniqueReasons = [...new Set(reasons)];
@@ -527,7 +545,7 @@ function parsedBlockReason(command, headless) {
 	} catch {
 		return "unparseable shell command (cannot verify safety)";
 	}
-	for (const segment of splitOnOps(tokens, ["&&", "||", ";", "|"])) {
+	for (const segment of splitOnOps(tokens, SPLIT_OPS)) {
 		const reason = catastrophicSegmentReason(segment);
 		if (reason) return reason;
 		if (!headless) continue;

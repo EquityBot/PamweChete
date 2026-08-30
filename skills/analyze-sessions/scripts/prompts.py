@@ -21,8 +21,13 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import sessions as S
+
+# Sessions whose header carries no parsable timestamp sort last, against the same aware sentinel
+# sessions.load_summaries orders by, so every sort key stays a datetime.
+_UNDATED = datetime.min.replace(tzinfo=timezone.utc)
 
 
 def main() -> int:
@@ -115,7 +120,7 @@ def _render_markdown(sess_prompts, total_prompts: int) -> None:
 
     proj_order = sorted(by_proj.keys(),
                         key=lambda k: max((s.started_at for s, _ in by_proj[k]
-                                           if s.started_at), default=None) or 0,
+                                           if s.started_at), default=_UNDATED),
                         reverse=True)
 
     print(f"# Pi prompts dump")
@@ -128,7 +133,7 @@ def _render_markdown(sess_prompts, total_prompts: int) -> None:
         print()
         # newest session first
         for s, prompts in sorted(by_proj[proj],
-                                 key=lambda x: x[0].started_at or 0,
+                                 key=lambda x: x[0].started_at or _UNDATED,
                                  reverse=True):
             print(f"### {S.fmt_short_ts(s.started_at)}  ·  `{s.short_id}`  "
                   f"·  {len(prompts)} prompt{'s' if len(prompts) != 1 else ''}")

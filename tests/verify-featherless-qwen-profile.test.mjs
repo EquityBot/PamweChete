@@ -6,6 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { verifyProfile } from "../scripts/verify-featherless-qwen-profile.mjs";
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const VERIFIER = join(ROOT, "scripts", "verify-featherless-qwen-profile.mjs");
 const MODEL_ID = "OBLITERATUS/Qwen3.8-27B-OBLITERATED";
@@ -101,6 +103,10 @@ test("accepts an exact secret-free Featherless profile", (context) => {
 
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout.trim(), "FEATHERLESS_QWEN_PROFILE_OK");
+});
+
+test("accepts the profile shipped in this repository on any platform", () => {
+	verifyProfile(join(ROOT, "profiles", "featherless-qwen38"));
 });
 
 test("rejects an apiKey field without echoing its value", (context) => {

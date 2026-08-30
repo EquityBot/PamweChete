@@ -15,9 +15,9 @@ import { Text } from "@earendil-works/pi-tui";
 /**
  * Build the header text. This is what you customize.
  *
- * Currently replicates the built-in header exactly:
- *   - App name + version
- *   - Keybinding hints
+ * Currently renders the logo (app name + version) only; the keybinding
+ * hints are built below but held behind a commented-out return, so swap
+ * the two return lines to show them.
  *
  * To customize, just edit the `logo` or `hints` array below.
  */

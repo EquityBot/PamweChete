@@ -181,6 +181,57 @@ test("pipe-to-shell and file redirection remain risky", () => {
 	assert.equal(analyzeBashCommand("printf data > output.txt")?.severity, "medium");
 });
 
+test("subshells, grouping and background operators do not hide destructive commands", () => {
+	const commands = [
+		"(rm -rf /tmp/x)",
+		"echo hi & rm -rf /tmp/x",
+		"nohup rm -rf /tmp/x &",
+		"{ rm -rf /tmp/x; }",
+		"cd /tmp && (rm -rf x)",
+		"ls | (rm -rf /tmp/x)",
+		"echo $(rm -rf /tmp/x)",
+		"true; (dd if=/dev/zero of=/dev/sda)",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.notEqual(risk, null, command);
+		assert.equal(risk?.severity, "high", command);
+	}
+});
+
+test("wrappers and quoted shell payloads prompt wherever the disabled-mode floor blocks", () => {
+	const commands = [
+		"time rm -rf /tmp/x",
+		"bash -c 'rm -rf /tmp/x'",
+		"sh -c 'sudo x'",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.notEqual(risk, null, command);
+		assert.equal(risk?.severity, "high", command);
+		assert.ok(disabledModeBlockReason(command), command);
+	}
+});
+
+test("flag-prefixed kubectl delete and terraform destroy prompt wherever the floor blocks", () => {
+	const commands = [
+		"kubectl delete pod web",
+		"kubectl -n prod delete pod web",
+		"terraform destroy",
+		"terraform -chdir=infra destroy",
+		"(kubectl -n prod delete pod web)",
+		"echo done & terraform -chdir=infra destroy",
+	];
+
+	for (const command of commands) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "high", command);
+		assert.ok(disabledModeBlockReason(command), command);
+	}
+});
+
 test("disabled main mode keeps a catastrophic floor without blocking ordinary push", () => {
 	assert.equal(disabledModeBlockReason("git push"), null);
 	assert.match(disabledModeBlockReason("rm -rf build") ?? "", /recursive delete/i);

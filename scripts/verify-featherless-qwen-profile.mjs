@@ -61,15 +61,16 @@ function canonical(path) {
 	return process.platform === "win32" ? value.toLowerCase() : value;
 }
 
-function resolveAbsoluteConfigPath(value, label) {
+// A relative entry is read against the same approved root the entry has to stay inside, so the
+// profile can ship checkout-independent paths without loosening the containment check below.
+function resolveConfigPath(value, base, label) {
 	assert.equal(typeof value, "string", `${label} must be a path string`);
-	assert.ok(isAbsolute(value), `${label} must be absolute`);
-	return resolve(value);
+	return isAbsolute(value) ? resolve(value) : resolve(base, value);
 }
 
 function assertExactPaths(actual, expected, parent, label) {
 	assert.ok(Array.isArray(actual), `${label} must be an array`);
-	const resolved = actual.map((value, index) => resolveAbsoluteConfigPath(value, `${label}[${index}]`));
+	const resolved = actual.map((value, index) => resolveConfigPath(value, parent, `${label}[${index}]`));
 	for (const path of resolved) {
 		assert.ok(isInside(parent, path), `${label} contains a path outside its approved root`);
 		assert.ok(existsSync(path), `${label} references a missing path`);

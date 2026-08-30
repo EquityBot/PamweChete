@@ -46,14 +46,14 @@
     "blockImages": true
   },
   "extensions": [
-    "C:/Users/-/Documents/Repos/PamweChete/extensions/ask-user-question.ts",
-    "C:/Users/-/Documents/Repos/PamweChete/extensions/bash-guard",
-    "C:/Users/-/Documents/Repos/PamweChete/extensions/featherless-tool-bridge",
-    "C:/Users/-/Documents/Repos/PamweChete/extensions/custom-header.ts",
-    "C:/Users/-/Documents/Repos/PamweChete/extensions/prompt-snippets"
+    "extensions/ask-user-question.ts",
+    "extensions/bash-guard",
+    "extensions/featherless-tool-bridge",
+    "extensions/custom-header.ts",
+    "extensions/prompt-snippets"
   ],
   "prompts": [
-    "C:/Users/-/Documents/Repos/PamweChete/profiles/featherless-qwen38/prompts/implement.md",
-    "C:/Users/-/Documents/Repos/PamweChete/profiles/featherless-qwen38/prompts/verify.md"
+    "prompts/implement.md",
+    "prompts/verify.md"
   ]
 }

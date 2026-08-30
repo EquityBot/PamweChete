@@ -26,7 +26,7 @@ def analyze(path: str) -> dict:
             or ('\u2980' <= c <= '\u29FF')     # Misc Mathematical Symbols-B
             or ('\u2A00' <= c <= '\u2AFF')     # Supplemental Mathematical Operators
             or ('\u0370' <= c <= '\u03FF')     # Greek
-            or ('\u1D400' <= c <= '\u1D7FF')   # Mathematical Alphanumeric Symbols
+            or ('\U0001D400' <= c <= '\U0001D7FF')  # Mathematical Alphanumeric Symbols
             or c in '∫∑∏√∂∇∞≈≠≤≥±×÷∈∉⊂⊃∪∩∧∨¬∀∃∅'
         )
         math_density = math_chars / max(text_len, 1)

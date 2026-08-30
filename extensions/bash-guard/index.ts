@@ -96,7 +96,7 @@ export default function bashGuard(pi: ExtensionAPI) {
 	};
 
 	pi.on("session_start", async (event, ctx) => {
-		if (event.reason === "startup" && pi.getFlag("--bash-guard-disabled") === true) {
+		if (event.reason === "startup" && pi.getFlag("bash-guard-disabled") === true) {
 			disabled = true;
 			showDisabledStatus(ctx);
 		}
@@ -149,7 +149,7 @@ export default function bashGuard(pi: ExtensionAPI) {
 			};
 		}
 
-		if (!ctx.hasUI && pi.getFlag("--bash-guard-auto-allow")) return;
+		if (!ctx.hasUI && pi.getFlag("bash-guard-auto-allow")) return;
 		if (await promptRunOrAbort(ctx, command, risk) === "run") return;
 
 		recentlyAborted.set(command, now);
