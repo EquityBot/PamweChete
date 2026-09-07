@@ -24,7 +24,7 @@ This repo contains everything else.
 ## Featherless Qwen coding profile
 
 [`profiles/featherless-qwen38/`](profiles/featherless-qwen38/) is a tested Windows profile for
-`featherless/OBLITERATUS/Qwen3.8-27B-OBLITERATED`. It includes a compact coding agreement,
+`featherless/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU`. It includes a compact coding agreement,
 deterministic sampling defaults, prompt templates, a benchmark-selected tool surface and a
 structural verifier.
 

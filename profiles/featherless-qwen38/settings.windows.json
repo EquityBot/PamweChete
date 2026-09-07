@@ -1,9 +1,9 @@
 {
   "defaultProvider": "featherless",
-  "defaultModel": "OBLITERATUS/Qwen3.8-27B-OBLITERATED",
+  "defaultModel": "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU",
   "defaultThinkingLevel": "off",
   "enabledModels": [
-    "featherless/OBLITERATUS/Qwen3.8-27B-OBLITERATED"
+    "featherless/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU"
   ],
   "defaultTools": [
     "read",

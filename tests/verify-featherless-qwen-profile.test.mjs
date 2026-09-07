@@ -10,7 +10,7 @@ import { verifyProfile } from "../scripts/verify-featherless-qwen-profile.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const VERIFIER = join(ROOT, "scripts", "verify-featherless-qwen-profile.mjs");
-const MODEL_ID = "OBLITERATUS/Qwen3.8-27B-OBLITERATED";
+const MODEL_ID = "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU";
 
 function toConfigPath(path) {
 	return path.replaceAll("\\", "/");
@@ -47,8 +47,6 @@ function createValidProfile(parent) {
 					samplingParams: {
 						temperature: 0,
 						repetition_penalty: 1.15,
-						parallel_tool_calls: false,
-						chat_template_kwargs: { enable_thinking: false },
 					},
 				}],
 			},
@@ -152,18 +150,20 @@ test("rejects a key-like string without echoing it", (context) => {
 	assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(synthetic));
 });
 
-test("rejects a profile that does not explicitly disable template thinking", (context) => {
+// The reverse of the rule the previous model needed: setting enable_thinking false makes this model
+// print a <tool_call> envelope as ordinary text instead of emitting a native tool call.
+test("rejects a profile that disables template thinking", (context) => {
 	const parent = mkdtempSync(join(tmpdir(), "pi-profile-thinking-"));
 	context.after(() => rmSync(parent, { recursive: true, force: true }));
 	const profile = createValidProfile(parent);
 	const modelsPath = join(profile, "models.example.json");
 	const models = JSON.parse(readFileSync(modelsPath, "utf8"));
-	delete models.providers.featherless.models[0].samplingParams.chat_template_kwargs;
+	models.providers.featherless.models[0].samplingParams.chat_template_kwargs = { enable_thinking: false };
 	writeFileSync(modelsPath, JSON.stringify(models, null, 2));
 
 	const result = runVerifier(profile);
 	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /enable_thinking/i);
+	assert.match(result.stderr, /chat_template_kwargs/i);
 });
 
 test("rejects a benchmark tool surface with the question tool omitted", (context) => {

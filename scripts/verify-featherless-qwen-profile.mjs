@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const MODEL_ID = "OBLITERATUS/Qwen3.8-27B-OBLITERATED";
+const MODEL_ID = "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU";
 const MODEL_REF = `featherless/${MODEL_ID}`;
 const KEY_LIKE_PATTERN = /rc_[A-Za-z0-9]{32,}/g;
 const LEAN_TOOLS = ["read", "bash", "edit", "write", "ask_user_question"];
@@ -96,13 +96,18 @@ function validateModels(models) {
 	assert.deepEqual(model.input, ["text"], "Image input must stay disabled until metadata proves support");
 	assert.equal(model.contextWindow, 32768, "Reusable profile context window differs");
 	assert.equal(model.maxTokens, 4096, "Reusable profile output limit differs");
-	assert.equal(model.samplingParams?.temperature, 0, "Temperature must be deterministic");
-	assert.equal(model.samplingParams?.repetition_penalty, 1.15, "Repetition penalty differs");
-	assert.equal(model.samplingParams?.parallel_tool_calls, false, "Parallel tool calls must be disabled");
+	// The previous model needed enable_thinking false to stop reasoning leaking ahead of its text-tool
+	// envelopes. This one is the reverse: with that flag set it stops emitting native tool calls and
+	// prints a <tool_call> envelope as ordinary text, inventing tool names as it goes. Leave it unset.
 	assert.equal(
-		model.samplingParams?.chat_template_kwargs?.enable_thinking,
-		false,
-		"chat template enable_thinking must be explicitly disabled",
+		model.samplingParams?.chat_template_kwargs,
+		undefined,
+		"chat_template_kwargs must stay unset, because enable_thinking false stops native tool calls",
+	);
+	assert.deepEqual(
+		model.samplingParams,
+		{ temperature: 0, repetition_penalty: 1.15 },
+		"Sampling parameters differ from the verified set",
 	);
 }
 

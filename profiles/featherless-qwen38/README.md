@@ -1,13 +1,13 @@
 # Featherless Qwen3.8 coding profile
 
-This profile configures Pi for `OBLITERATUS/Qwen3.8-27B-OBLITERATED` through Featherless's OpenAI-compatible Chat Completions endpoint. It favours deterministic tool use, a small tool surface, explicit verification and bounded retries.
+This profile configures Pi for `DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU` through Featherless's OpenAI-compatible Chat Completions endpoint. It favours deterministic tool use, a small tool surface, explicit verification and bounded retries.
 
 ## What is selected
 
-- Exact provider/model: `featherless/OBLITERATUS/Qwen3.8-27B-OBLITERATED`
+- Exact provider/model: `featherless/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU`
 - Maximum advertised context: 32,768 tokens, lowered when the authenticated plan reports a smaller limit
-- Baseline sampling: temperature `0`, repetition penalty `1.15`, parallel tool calls disabled
-- Thinking: off at both Pi and chat-template levels; `enable_thinking: false` prevents the endpoint from leaking generated reasoning ahead of text-tool envelopes
+- Baseline sampling: temperature `0`, repetition penalty `1.15`
+- Thinking: off at the Pi level only. `chat_template_kwargs` is deliberately unset, because setting `enable_thinking: false` stops this model emitting native tool calls: it prints a `<tool_call>` envelope as ordinary text and invents tool names. The verifier fails the profile if that key comes back.
 - Reliability: two provider-request retries with server-directed delays capped at 30 seconds, plus three state-preserving agent retries after 5, 10 and 20 seconds
 - Extensions: ask-user-question, bash-guard, pinned RTK output compression, the bounded Featherless text-tool bridge, custom header and prompt snippets
 - Network, browser, memory and subagent extensions: not loaded by default
@@ -37,12 +37,27 @@ file, untracked-directory and diff facts.
 
 A repeated live smoke pass later observed Featherless return transient capacity errors after partial tool progress. Pi's request retry implementation safely retries 429 and 5xx responses before a stream begins, while its agent retry path retains completed tool results and continues from the same state. The final profile therefore enables two provider retries, caps a server-requested delay at 30 seconds, and gives a longer 35-second agent backoff window.
 
-The authenticated Featherless endpoint currently reports native tool calling
-as unavailable for this model and returns attempted calls as ordinary text.
-The model-scoped bridge recognises only the bounded response forms documented
-in its README, extracts one call for a currently active tool, and leaves Pi's
-normal schema validation and safety hooks in control. Unknown tools, malformed
-arguments, repeated envelopes and unrecognised wrappers are not executed.
+## Model change, 2026-09-07
+
+The profile moved from `OBLITERATUS/Qwen3.8-27B-OBLITERATED` to the DavidAU
+model above. Featherless serves the new model at 32k context and it emits
+**native** tool calls, so the text-tool bridge is no longer required: it is
+scoped to the previous model's exact id and stays inert here. The bridge
+extension is still loaded so the older model keeps working if it is selected
+again.
+
+Two settings did not carry over. `chat_template_kwargs` is now unset, for the
+reason given above. `parallel_tool_calls: false` is also gone, because the
+verified configuration does not set it and shipping an untested parameter in a
+reproducible profile is worse than omitting it.
+
+`supportsFinishReason` stays `false` even though the new model does return a
+`finish_reason`. The compat block is provider-wide and shared with the older
+model, which genuinely omits it; `false` is proven against both, so the
+conservative value is kept rather than tuned on one model's behaviour.
+
+The benchmark figures above were measured on the previous model and are
+retained as the record of that selection. They have not been re-run.
 
 ## Security boundary
 

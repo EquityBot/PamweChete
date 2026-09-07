@@ -13,8 +13,8 @@
       },
       "models": [
         {
-          "id": "OBLITERATUS/Qwen3.8-27B-OBLITERATED",
-          "name": "Qwen3.8 27B OBLITERATED (Featherless)",
+          "id": "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU",
+          "name": "Qwen3.8 27B TURBO Cold Fusion (Featherless)",
           "reasoning": false,
           "input": [
             "text"
@@ -23,11 +23,7 @@
           "maxTokens": 4096,
           "samplingParams": {
             "temperature": 0,
-            "repetition_penalty": 1.15,
-            "parallel_tool_calls": false,
-            "chat_template_kwargs": {
-              "enable_thinking": false
-            }
+            "repetition_penalty": 1.15
           },
           "cost": {
             "input": 0.265,
