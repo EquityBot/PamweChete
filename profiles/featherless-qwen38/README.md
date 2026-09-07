@@ -7,6 +7,7 @@ This profile configures Pi for `DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-
 - Exact provider/model: `featherless/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU`
 - Maximum advertised context: 32,768 tokens, lowered when the authenticated plan reports a smaller limit
 - Baseline sampling: temperature `0`, repetition penalty `1.15`
+- Cost metadata, from the Featherless model page on 2026-09-07: `$1.60` input, `$0.15` cached, `$12.00` output per million tokens. Featherless prices differ per model and change over time, so re-read the model page when switching models rather than carrying the previous figures over.
 - Thinking: off at the Pi level only. `chat_template_kwargs` is deliberately unset, because setting `enable_thinking: false` stops this model emitting native tool calls: it prints a `<tool_call>` envelope as ordinary text and invents tool names. The verifier fails the profile if that key comes back.
 - Reliability: two provider-request retries with server-directed delays capped at 30 seconds, plus three state-preserving agent retries after 5, 10 and 20 seconds
 - Extensions: ask-user-question, bash-guard, pinned RTK output compression, the bounded Featherless text-tool bridge, custom header and prompt snippets

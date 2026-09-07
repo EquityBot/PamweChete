@@ -26,8 +26,8 @@
             "repetition_penalty": 1.15
           },
           "cost": {
-            "input": 0.265,
-            "output": 0.65,
+            "input": 1.6,
+            "output": 12,
             "cacheRead": 0.15,
             "cacheWrite": 0
           }
