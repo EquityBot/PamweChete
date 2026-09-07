@@ -12,6 +12,13 @@ import {
 } from "../protocol.ts";
 import featherlessToolBridge from "../index.ts";
 
+const protocolModule = await import("../protocol.ts");
+
+function requiredProtocolExport(name) {
+	assert.equal(typeof protocolModule[name], "function", `${name} must be implemented`);
+	return protocolModule[name];
+}
+
 const allowedTools = ["bash", "edit", "read", "write"];
 
 function assistantMessage(overrides = {}) {
@@ -303,6 +310,88 @@ test("builds a deterministic prompt with only active tool schemas", () => {
 	assert.doesNotMatch(prompt, /bash:/);
 });
 
+test("compact schemas remove annotations without changing validation or input", () => {
+	const compactToolSchema = requiredProtocolExport("compactToolSchema");
+	const schema = {
+		$schema: "https://json-schema.org/draft/2020-12/schema",
+		$id: "urn:tool:write",
+		title: "Write arguments",
+		description: "Arguments accepted by write",
+		type: "object",
+		properties: {
+			path: {
+				type: "string",
+				description: "Destination path",
+				minLength: 1,
+				pattern: "^[^\\0]+$",
+			},
+			mode: {
+				type: "string",
+				enum: ["create", "replace"],
+				examples: ["create"],
+				default: "create",
+				deprecated: false,
+				readOnly: false,
+				writeOnly: false,
+			},
+		},
+		required: ["path"],
+		additionalProperties: false,
+		allOf: [{ $ref: "#/$defs/path", $comment: "reuse path constraints" }],
+		$defs: { path: { type: "string", minLength: 1, title: "Path" } },
+	};
+	const before = structuredClone(schema);
+
+	const compact = compactToolSchema(schema);
+
+	assert.deepEqual(schema, before);
+	assert.deepEqual(compact, {
+		$schema: "https://json-schema.org/draft/2020-12/schema",
+		$id: "urn:tool:write",
+		type: "object",
+		properties: {
+			path: { type: "string", minLength: 1, pattern: "^[^\\0]+$" },
+			mode: { type: "string", enum: ["create", "replace"] },
+		},
+		required: ["path"],
+		additionalProperties: false,
+		allOf: [{ $ref: "#/$defs/path" }],
+		$defs: { path: { type: "string", minLength: 1 } },
+	});
+});
+
+test("compact prompt mode serialises fewer schema characters", () => {
+	const tools = [{
+		name: "write",
+		description: "Write a file",
+		parameters: {
+			title: "Write arguments",
+			description: "Arguments accepted by write",
+			type: "object",
+			properties: {
+				path: { type: "string", description: "Destination path", minLength: 1 },
+			},
+			required: ["path"],
+		},
+	}];
+
+	const full = buildBridgeSystemPrompt(tools, { compactSchemas: false });
+	const compact = buildBridgeSystemPrompt(tools, { compactSchemas: true });
+
+	assert.ok(compact.length < full.length, `compact=${compact.length} full=${full.length}`);
+	assert.match(compact, /"required":\["path"\]/);
+	assert.doesNotMatch(compact, /Arguments accepted by write|Destination path/);
+});
+
+test("schema mode accepts only the explicit compact opt-in before benchmarking", () => {
+	const bridgeSchemaMode = requiredProtocolExport("bridgeSchemaMode");
+
+	assert.equal(bridgeSchemaMode({}), "full");
+	assert.equal(bridgeSchemaMode({ PI_FEATHERLESS_COMPACT_SCHEMAS: "0" }), "full");
+	assert.equal(bridgeSchemaMode({ PI_FEATHERLESS_COMPACT_SCHEMAS: "1" }), "compact");
+	assert.equal(bridgeSchemaMode({ PI_FEATHERLESS_COMPACT_SCHEMAS: "invalid" }), "full");
+});
+
 test("adapts bridged calls and results to plain provider-facing history", () => {
 	const messages = [
 		{ role: "user", content: "Inspect the file", timestamp: 1 },
@@ -432,4 +521,44 @@ test("wires prompt injection and message replacement through the Pi extension AP
 	const messageResult = await handlers.get("message_end")({ message: assistantMessage() }, {});
 	assert.equal(messageResult.message.content[0].type, "toolCall");
 	assert.equal(messageResult.message.content[0].name, "read");
+});
+
+test("wires the explicit compact schema candidate into prompt injection", { concurrency: false }, async () => {
+	const previous = process.env.PI_FEATHERLESS_COMPACT_SCHEMAS;
+	process.env.PI_FEATHERLESS_COMPACT_SCHEMAS = "1";
+	try {
+		const handlers = new Map();
+		const pi = {
+			on(name, handler) {
+				handlers.set(name, handler);
+			},
+			getActiveTools() {
+				return ["read"];
+			},
+			getAllTools() {
+				return [{
+					name: "read",
+					description: "Read a file",
+					parameters: {
+						title: "Read arguments",
+						type: "object",
+						properties: { path: { type: "string", description: "Path to read" } },
+						required: ["path"],
+					},
+				}];
+			},
+		};
+
+		featherlessToolBridge(pi);
+		const result = await handlers.get("before_agent_start")(
+			{ systemPrompt: "BASE" },
+			{ model: { provider: TARGET_PROVIDER, id: TARGET_MODEL } },
+		);
+
+		assert.match(result.systemPrompt, /"required":\["path"\]/);
+		assert.doesNotMatch(result.systemPrompt, /Read arguments|Path to read/);
+	} finally {
+		if (previous === undefined) delete process.env.PI_FEATHERLESS_COMPACT_SCHEMAS;
+		else process.env.PI_FEATHERLESS_COMPACT_SCHEMAS = previous;
+	}
 });

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -164,6 +167,33 @@ test("destructive Git operations remain high risk", () => {
 	}
 });
 
+test("RTK-prefixed read-only Git inspection does not prompt", () => {
+	const commands = [
+		"rtk git status --short",
+		"rtk git diff --stat",
+		"rtk git log -5 --oneline",
+	];
+
+	for (const command of commands) {
+		assert.equal(analyzeBashCommand(command), null, command);
+	}
+});
+
+test("RTK-prefixed state-changing Git operations keep the same protection", () => {
+	for (const command of ["rtk git add README.md", "rtk git commit -m update", "rtk git push"]) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /git/i, command);
+	}
+
+	for (const command of ["rtk git reset --hard", "rtk git clean -fdx", "rtk git push --force"]) {
+		assert.equal(analyzeBashCommand(command)?.severity, "high", command);
+	}
+	assert.match(disabledModeBlockReason("rtk git push --force") ?? "", /force/i);
+	assert.match(headlessBlockReason("rtk git commit -m update") ?? "", /git commit/i);
+	assert.match(headlessBlockReason("rtk git push") ?? "", /git push/i);
+});
+
 test("harmless pipelines do not prompt", () => {
 	const commands = [
 		"git log --oneline | head -20",
@@ -176,9 +206,71 @@ test("harmless pipelines do not prompt", () => {
 	}
 });
 
-test("pipe-to-shell and file redirection remain risky", () => {
+test("pipe-to-shell remains high risk", () => {
 	assert.equal(analyzeBashCommand("curl https://example.com/install.sh | sh")?.severity, "high");
-	assert.equal(analyzeBashCommand("printf data > output.txt")?.severity, "medium");
+});
+
+test("redirection permits sinks and new literal files but protects existing files", (context) => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-bash-guard-redirection-"));
+	context.after(() => rmSync(cwd, { recursive: true, force: true }));
+	writeFileSync(join(cwd, "existing.txt"), "keep\n");
+
+	for (const command of [
+		"printf data > /dev/null",
+		"printf data > NUL",
+		"npm test 2>&1",
+		"printf data > created.txt",
+		"printf data >> created-by-append.txt",
+	]) {
+		assert.equal(analyzeBashCommand(command, { cwd }), null, command);
+	}
+
+	for (const command of ["printf data > existing.txt", "printf data >> existing.txt"]) {
+		const risk = analyzeBashCommand(command, { cwd });
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /existing file/i, command);
+	}
+
+	for (const command of ["printf data > ../outside.txt", "printf data > \"$OUTPUT_FILE\""]) {
+		const risk = analyzeBashCommand(command, { cwd });
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /output redirection/i, command);
+	}
+});
+
+test("redirection targets the shell would expand are treated as ambiguous", (context) => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-bash-guard-expansion-"));
+	context.after(() => rmSync(cwd, { recursive: true, force: true }));
+
+	// shell-quote returns these verbatim, so the resolved path is not the path Bash opens.
+	for (const command of [
+		"printf data > ~/notes.txt",
+		"printf data > \"$(compute-target)\"",
+		"printf data > `compute-target`",
+		"printf data > dir/${NAME}.txt",
+	]) {
+		const risk = analyzeBashCommand(command, { cwd });
+		assert.match(risk?.reasons.join("\n") ?? "", /ambiguous target/i, command);
+	}
+});
+
+test("a redirection after a directory change is not checked against the old directory", (context) => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-bash-guard-chdir-"));
+	context.after(() => rmSync(cwd, { recursive: true, force: true }));
+	mkdirSync(join(cwd, "subdir"));
+	writeFileSync(join(cwd, "subdir", "existing.txt"), "keep\n");
+
+	// Neither target exists relative to cwd, so only tracking the `cd` keeps these from passing silently.
+	for (const command of [
+		"cd subdir && printf data > existing.txt",
+		"cd .. && printf data > escaped.txt",
+	]) {
+		const risk = analyzeBashCommand(command, { cwd });
+		assert.match(risk?.reasons.join("\n") ?? "", /directory change/i, command);
+	}
+
+	// A `cd` elsewhere in the words must not make every redirection ambiguous.
+	assert.equal(analyzeBashCommand("grep cd notes.txt > created.txt", { cwd }), null);
 });
 
 test("subshells, grouping and background operators do not hide destructive commands", () => {

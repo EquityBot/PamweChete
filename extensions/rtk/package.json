@@ -1,0 +1,11 @@
+{
+  "name": "pi-rtk-output-compression",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./test/*.test.mjs"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

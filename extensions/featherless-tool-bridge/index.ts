@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	bridgeAssistantMessage,
 	bridgeContextForProvider,
+	bridgeSchemaMode,
 	buildBridgeSystemPrompt,
 	isTargetModel,
 	stripNativeToolFields,
@@ -21,7 +22,9 @@ export default function featherlessToolBridge(pi: ExtensionAPI) {
 		}
 
 		return {
-			systemPrompt: `${event.systemPrompt}\n\n${buildBridgeSystemPrompt(toolInfo)}`,
+			systemPrompt: `${event.systemPrompt}\n\n${buildBridgeSystemPrompt(toolInfo, {
+				compactSchemas: bridgeSchemaMode(process.env) === "compact",
+			})}`,
 		};
 	});
 

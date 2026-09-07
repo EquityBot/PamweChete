@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test ./test/policy.test.mjs"
+    "test": "node --test ./test/*.test.mjs"
   },
   "dependencies": {
     "shell-quote": "^1.10.0"

@@ -32,6 +32,10 @@ interface BridgeToolInfo {
 	parameters: unknown;
 }
 
+interface BridgePromptOptions {
+	compactSchemas?: boolean;
+}
+
 export interface ParsedToolEnvelope {
 	name: string;
 	arguments: Record<string, unknown>;
@@ -39,6 +43,40 @@ export interface ParsedToolEnvelope {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+const SCHEMA_ANNOTATION_KEYS = new Set([
+	"description",
+	"title",
+	"examples",
+	"default",
+	"$comment",
+	"deprecated",
+	"readOnly",
+	"writeOnly",
+]);
+
+export function compactToolSchema(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(compactToolSchema);
+	if (!isPlainObject(value)) return value;
+
+	const compact: Record<string, unknown> = {};
+	for (const [key, child] of Object.entries(value)) {
+		if (SCHEMA_ANNOTATION_KEYS.has(key)) continue;
+		compact[key] = compactToolSchema(child);
+	}
+	return compact;
+}
+
+const DEFAULT_BRIDGE_SCHEMA_MODE = "full";
+
+export function bridgeSchemaMode(
+	environment: Record<string, string | undefined> = process.env,
+): "full" | "compact" {
+	const configured = environment.PI_FEATHERLESS_COMPACT_SCHEMAS;
+	if (configured === "1") return "compact";
+	if (configured === "0") return "full";
+	return DEFAULT_BRIDGE_SCHEMA_MODE;
 }
 
 function hasUnsafeKey(value: unknown): boolean {
@@ -370,10 +408,13 @@ export function stripNativeToolFields(payload: unknown): unknown {
 	return sanitized;
 }
 
-export function buildBridgeSystemPrompt(tools: BridgeToolInfo[]): string {
+export function buildBridgeSystemPrompt(tools: BridgeToolInfo[], options: BridgePromptOptions = {}): string {
 	const schemas = [...tools]
 		.sort((left, right) => left.name.localeCompare(right.name))
-		.map((tool) => `${tool.name}: ${JSON.stringify(tool.parameters)}`)
+		.map((tool) => {
+			const parameters = options.compactSchemas ? compactToolSchema(tool.parameters) : tool.parameters;
+			return `${tool.name}: ${JSON.stringify(parameters)}`;
+		})
 		.join("\n");
 
 	return [

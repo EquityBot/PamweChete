@@ -74,6 +74,7 @@ function createValidProfile(parent) {
 		extensions: [
 			toConfigPath(join(ROOT, "extensions", "ask-user-question.ts")),
 			toConfigPath(join(ROOT, "extensions", "bash-guard")),
+			toConfigPath(join(ROOT, "extensions", "rtk")),
 			toConfigPath(join(ROOT, "extensions", "featherless-tool-bridge")),
 			toConfigPath(join(ROOT, "extensions", "custom-header.ts")),
 			toConfigPath(join(ROOT, "extensions", "prompt-snippets")),
@@ -107,6 +108,20 @@ test("accepts an exact secret-free Featherless profile", (context) => {
 
 test("accepts the profile shipped in this repository on any platform", () => {
 	verifyProfile(join(ROOT, "profiles", "featherless-qwen38"));
+});
+
+test("rejects RTK when it loads before bash-guard", (context) => {
+	const parent = mkdtempSync(join(tmpdir(), "pi-profile-extension-order-"));
+	context.after(() => rmSync(parent, { recursive: true, force: true }));
+	const profile = createValidProfile(parent);
+	const settingsPath = join(profile, "settings.windows.json");
+	const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	[settings.extensions[1], settings.extensions[2]] = [settings.extensions[2], settings.extensions[1]];
+	writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+	const result = runVerifier(profile);
+
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /bash-guard must load before RTK/i);
 });
 
 test("rejects an apiKey field without echoing its value", (context) => {

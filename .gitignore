@@ -17,6 +17,7 @@ pi-crash.log
 # Dependencies / generated environments
 node_modules/
 **/node_modules/
+.worktrees/
 .venv/
 **/.venv/
 

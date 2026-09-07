@@ -48,6 +48,7 @@
   "extensions": [
     "extensions/ask-user-question.ts",
     "extensions/bash-guard",
+    "extensions/rtk",
     "extensions/featherless-tool-bridge",
     "extensions/custom-header.ts",
     "extensions/prompt-snippets"

@@ -144,9 +144,17 @@ function validateSettings(settings, profileDirectory) {
 		"Provider retry delay must be bounded to 30 seconds",
 	);
 
+	// RTK rewrites command output, so bash-guard has to be loaded ahead of it to classify the raw command.
+	const extensionOrder = settings.extensions.map((value) => String(value).replaceAll("\\", "/"));
+	assert.ok(
+		extensionOrder.findIndex((path) => path.endsWith("extensions/bash-guard")) <
+			extensionOrder.findIndex((path) => path.endsWith("extensions/rtk")),
+		"bash-guard must load before RTK",
+	);
 	assertExactPaths(settings.extensions, [
 		join(ROOT, "extensions", "ask-user-question.ts"),
 		join(ROOT, "extensions", "bash-guard"),
+		join(ROOT, "extensions", "rtk"),
 		join(ROOT, "extensions", "featherless-tool-bridge"),
 		join(ROOT, "extensions", "custom-header.ts"),
 		join(ROOT, "extensions", "prompt-snippets"),

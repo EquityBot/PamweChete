@@ -8,13 +8,20 @@ import {
 	disabledModeBlockReason,
 	headlessBlockReason,
 } from "./policy.ts";
+import {
+	armFailClosedPromptTimeout,
+	rememberBlockedCommand,
+	type PromptChoice,
+} from "./prompt-timeout.ts";
 
 type Risk = {
 	severity: "high" | "medium";
 	reasons: string[];
 };
 
-async function promptRunOrAbort(ctx: any, command: string, risk: Risk): Promise<"run" | "abort"> {
+const PROMPT_TIMEOUT_MS = 120_000;
+
+async function promptRunOrAbort(ctx: any, command: string, risk: Risk): Promise<PromptChoice> {
 	if (!ctx.hasUI) return "abort";
 
 	const reasonsText = risk.reasons.map((reason) => `• ${reason}`).join("\n");
@@ -24,7 +31,8 @@ async function promptRunOrAbort(ctx: any, command: string, risk: Risk): Promise<
 		{ value: "abort", label: "Abort", description: "Block this command" },
 	];
 
-	const choice = await ctx.ui.custom<"run" | "abort">((tui, theme, _kb, done) => {
+	const choice = await ctx.ui.custom<PromptChoice>((tui, theme, _kb, done) => {
+		const settle = armFailClosedPromptTimeout(done, PROMPT_TIMEOUT_MS);
 		const container = new Container();
 		container.addChild(new DynamicBorder((text: string) => theme.fg("warning", text)));
 		container.addChild(new Text(theme.fg("warning", theme.bold("Potentially destructive bash command")), 1, 0));
@@ -38,8 +46,8 @@ async function promptRunOrAbort(ctx: any, command: string, risk: Risk): Promise<
 			noMatch: (text) => theme.fg("warning", text),
 		});
 
-		list.onSelect = (item) => done(item.value as "run" | "abort");
-		list.onCancel = () => done("abort");
+		list.onSelect = (item) => settle(item.value as "run" | "abort");
+		list.onCancel = () => settle("abort");
 		container.addChild(list);
 		container.addChild(new DynamicBorder((text: string) => theme.fg("warning", text)));
 
@@ -150,12 +158,15 @@ export default function bashGuard(pi: ExtensionAPI) {
 		}
 
 		if (!ctx.hasUI && pi.getFlag("bash-guard-auto-allow")) return;
-		if (await promptRunOrAbort(ctx, command, risk) === "run") return;
+		const choice = await promptRunOrAbort(ctx, command, risk);
+		if (choice === "run") return;
 
-		recentlyAborted.set(command, now);
+		rememberBlockedCommand(recentlyAborted, command);
 		return {
 			block: true,
-			reason: "Blocked by the user via bash-guard. Ask for confirmation or propose a non-destructive alternative.",
+			reason: choice === "timeout"
+				? "Blocked by bash-guard: interactive confirmation timed out after 120 seconds. Ask for confirmation or propose a non-destructive alternative."
+				: "Blocked by the user via bash-guard. Ask for confirmation or propose a non-destructive alternative.",
 		};
 	});
 }

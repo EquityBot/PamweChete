@@ -37,3 +37,6 @@ jobs:
       - name: Test Featherless tool bridge
         working-directory: extensions/featherless-tool-bridge
         run: npm test
+      - name: Test RTK output compression
+        working-directory: extensions/rtk
+        run: npm test

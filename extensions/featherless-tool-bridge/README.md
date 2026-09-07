@@ -55,4 +55,18 @@ plain JSON in provider-facing history; Pi's internal session remains typed.
 If the endpoint leaks a generated reasoning prefix despite thinking being
 disabled, Pi stores and displays only the text after `</think>`.
 
+## Schema modes
+
+The compatibility prompt defaults to full active-tool schemas. Set
+`PI_FEATHERLESS_COMPACT_SCHEMAS=1` to remove only JSON Schema annotation
+keywords (`description`, `title`, `examples`, `default`, `$comment`,
+`deprecated`, `readOnly` and `writeOnly`) from the provider-facing copy. All
+structural and validation keywords are retained, and Pi's original schemas are
+not mutated. Set the value to `0` to force full schemas. Any other value uses
+the benchmark-selected default documented by the profile.
+
+The 2026-08-28 live A/B selected full schemas. Compact mode failed the
+multi-step fixture with malformed wrapper repetition, so `1` is retained only
+for controlled diagnostics and is not recommended for normal coding sessions.
+
 Run `npm test` in this directory to verify the protocol boundary.

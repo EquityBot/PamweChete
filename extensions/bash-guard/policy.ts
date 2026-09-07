@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
+
 import { parse as shellParse } from "shell-quote";
 
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -294,6 +297,78 @@ function hasPipeToShell(tokens) {
 	return false;
 }
 
+function isInside(parent, child) {
+	const rel = relative(resolve(parent), resolve(child));
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function isNullDevice(target) {
+	return target === "/dev/null" || (process.platform === "win32" && target.toLowerCase() === "nul");
+}
+
+// shell-quote drops `${VAR}` from a word unless an env supplies it, so `> dir/${NAME}.txt` would other-
+// wise be checked as the literal `dir/.txt`. Re-parsing with this sentinel as the value of every
+// variable leaves a recognisable mark at each expansion site instead.
+const EXPANSION_SENTINEL = "__pi_shell_expansion__";
+
+function redirectionTokens(command, fallback) {
+	try {
+		return shellParse(command, () => EXPANSION_SENTINEL);
+	} catch {
+		return fallback;
+	}
+}
+
+// Bash expands these before it opens the target, but shell-quote hands the text back verbatim or drops
+// it, so the path checked below would not be the path written. Treat them as ambiguous rather than guess.
+function isShellExpandedTarget(target) {
+	return target.startsWith("~")
+		|| target.includes(EXPANSION_SENTINEL)
+		|| target.includes("$")
+		|| target.includes("`");
+}
+
+// A relative target is only checkable while the working directory is known, and this analyser does not
+// track one across a `cd`.
+function changesDirectory(tokens) {
+	return tokens.some((token, index) => token === "cd" && (index === 0 || isOpToken(tokens[index - 1])));
+}
+
+function outputRedirectionReasons(tokens, cwd) {
+	const reasons = [];
+	const directoryChanged = changesDirectory(tokens);
+	for (let index = 0; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (!isOpToken(token) || ![">", ">>", ">&"].includes(token.op)) continue;
+
+		const target = tokens[index + 1];
+		if (token.op === ">&" && typeof target === "string" && /^&?\d+$/.test(target)) continue;
+		if (typeof target !== "string" || target.length === 0) {
+			reasons.push("shell output redirection has an ambiguous target");
+			continue;
+		}
+		if (isNullDevice(target)) continue;
+		if (isShellExpandedTarget(target)) {
+			reasons.push("shell output redirection has an ambiguous target");
+			continue;
+		}
+		if (directoryChanged && !isAbsolute(target)) {
+			reasons.push("shell output redirection follows a directory change, so its target is ambiguous");
+			continue;
+		}
+
+		const resolvedTarget = resolve(cwd, target);
+		if (!isInside(cwd, resolvedTarget)) {
+			reasons.push("shell output redirection targets a path outside the working directory");
+			continue;
+		}
+		if (existsSync(resolvedTarget)) {
+			reasons.push("shell output redirection targets an existing file");
+		}
+	}
+	return reasons;
+}
+
 function analyzeSegment(segment) {
 	const reasons = [];
 	let severity = "medium";
@@ -303,11 +378,17 @@ function analyzeSegment(segment) {
 		return { severity, reasons: ["env --split-string (opaque command execution)"] };
 	}
 
-	const cmd = commandName(segment[index]);
-	const rest = tokensToStrings(segment.slice(index + 1));
+	let cmd = commandName(segment[index]);
+	let rest = tokensToStrings(segment.slice(index + 1));
 
 	const envReason = envExecReason(tokensToStrings(segment.slice(0, index)));
 	if (envReason) reasons.push(envReason);
+
+	// rtk wraps a real command, so classify the wrapped command and keep the git rules below in force.
+	if (cmd === "rtk" && commandName(rest[0] ?? "") === "git") {
+		cmd = "git";
+		rest = rest.slice(1);
+	}
 
 	if (cmd === "sudo") {
 		reasons.push("sudo (elevated privileges)");
@@ -421,7 +502,7 @@ function analyzeSegment(segment) {
 	return reasons.length === 0 ? null : { severity, reasons };
 }
 
-export function analyzeBashCommand(command) {
+export function analyzeBashCommand(command, options = {}) {
 	let tokens;
 	try {
 		tokens = shellParse(command);
@@ -432,7 +513,7 @@ export function analyzeBashCommand(command) {
 	const reasons = [];
 	let severity = "medium";
 	const ops = tokens.filter(isOpToken).map((token) => token.op);
-	if (ops.some((op) => [">", ">>", "2>", "2>>"].includes(op))) reasons.push("shell output redirection (can overwrite files)");
+	reasons.push(...outputRedirectionReasons(redirectionTokens(command, tokens), options.cwd ?? process.cwd()));
 	if (ops.includes("<")) reasons.push("shell input redirection (questionable)");
 	if (hasPipeToShell(tokens)) {
 		reasons.push("pipe to a shell (possible remote code execution)");
@@ -560,8 +641,9 @@ function parsedBlockReason(command, headless) {
 }
 
 function findBlockedReason(command, rules) {
+	const normalizedCommand = command.replace(/(^|(?:&&|\|\||[;|])\s*)rtk(?:\.exe)?\s+git\b/gi, "$1git");
 	for (const { pattern, reason } of rules) {
-		if (pattern.test(command)) return reason;
+		if (pattern.test(normalizedCommand)) return reason;
 	}
 	return null;
 }

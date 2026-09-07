@@ -27,7 +27,10 @@ which pi-subagents injects into every spawned process.
 - Prompts for: `rm`/`rmdir`/`unlink`, `sudo`, `find -delete`, `dd`, `truncate`, `sed -i`,
   `perl -pi`, `chmod/chown -R`, `mv/cp --force`, `kill`/`pkill`/`killall`, `shutdown`/`reboot`,
   `systemctl stop/disable`, `curl|sh`/`wget|sh`, `kubectl delete`, `terraform destroy`,
-  `aws s3 rm --recursive`, `gcloud delete`, and shell redirections (`>`, `>>`, `2>`)
+  `aws s3 rm --recursive`, `gcloud delete`, and output redirection that would touch an existing
+  file, escape the working directory, or use an ambiguous target
+- Allows descriptor-to-descriptor/null-device redirection and creation of a new literal file,
+  matching the built-in `write` tool's ordinary file-creation behaviour
 - Allows harmless pipelines such as `git log | head`; pipe-to-shell execution remains high risk
 - Shows a 2-option dialog: **Run** / **Abort**
 - If aborted, the tool call is blocked and the model receives a clear reason
@@ -79,5 +82,7 @@ Auto-discovered from `~/.pi/agent/extensions/bash-guard/`. Run `/reload` in pi.
 
 - Scope: `bash` tool calls only (`write`/`edit` and user `!` commands are not intercepted).
 - Policy behaviour is covered by `npm test` in this directory.
+- Interactive confirmation fails closed after 120 seconds; a timed-out command is blocked and remembered like an explicit abort.
+- RTK-prefixed Git commands receive the same classification as their direct Git equivalents.
 - `--bash-guard-auto-allow`: main-session flag that allows flagged commands when there is no UI
   (e.g. running pi non-interactively). Has no effect in subagent sessions.

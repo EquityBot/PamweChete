@@ -9,7 +9,7 @@ This profile configures Pi for `OBLITERATUS/Qwen3.8-27B-OBLITERATED` through Fea
 - Baseline sampling: temperature `0`, repetition penalty `1.15`, parallel tool calls disabled
 - Thinking: off at both Pi and chat-template levels; `enable_thinking: false` prevents the endpoint from leaking generated reasoning ahead of text-tool envelopes
 - Reliability: two provider-request retries with server-directed delays capped at 30 seconds, plus three state-preserving agent retries after 5, 10 and 20 seconds
-- Extensions: ask-user-question, bash-guard, the bounded Featherless text-tool bridge, custom header and prompt snippets
+- Extensions: ask-user-question, bash-guard, pinned RTK output compression, the bounded Featherless text-tool bridge, custom header and prompt snippets
 - Network, browser, memory and subagent extensions: not loaded by default
 
 The benchmark-generated `settings.windows.json` records the winning tool surface. It is written only after both approved candidates complete the same live fixtures.
@@ -22,6 +22,18 @@ The 2026-08-28 live benchmark on Pi 0.84.3 selected the expanded surface:
 multi-step create-and-verify fixtures with 10 tool calls, zero invalid calls
 and zero repeated calls. The lean surface passed the first two fixtures but
 did not complete the multi-step fixture in the selection run.
+
+The second optimisation benchmark kept full bridge schemas. With pinned RTK
+enabled, full schemas again passed all three fixtures with 10 valid calls,
+zero invalid calls, zero repeats and 223 output tokens. The compact-schema
+candidate passed the first two fixtures but failed the multi-step fixture after
+one read, then emitted 4,108 output tokens of malformed wrapper repetition. It
+is therefore diagnostic-only; the unset/default bridge mode remains `full`.
+
+In a separate controlled repository containing 81 modified tracked files and
+150 untracked files, RTK 0.46.0 reduced verbose `git status` output by 36.56%
+and verbose `git diff` output by 44.76% while retaining the required changed
+file, untracked-directory and diff facts.
 
 A repeated live smoke pass later observed Featherless return transient capacity errors after partial tool progress. Pi's request retry implementation safely retries 429 and 5xx responses before a stream begins, while its agent retry path retains completed tool results and continues from the same state. The final profile therefore enables two provider retries, caps a server-requested delay at 30 seconds, and gives a longer 35-second agent backoff window.
 
@@ -41,9 +53,11 @@ arguments, repeated envelopes and unrecognised wrappers are not executed.
 1. Install Pi and verify `pi --version` matches the audited version documented by the setup.
 2. Clone this fork anywhere; `settings.windows.json` records its `extensions` relative to the repository root and its `prompts` relative to this profile directory.
 3. In `extensions/bash-guard`, run `npm ci --ignore-scripts` and `npm test`.
-4. Copy `models.example.json` to `~/.pi/agent/models.json`, adapting only authenticated context-derived limits when necessary.
-5. Copy the generated settings and `AGENTS.md` to `~/.pi/agent/` without replacing `auth.json` or session data, rewriting the relative `extensions` and `prompts` entries to absolute paths inside the clone (Pi resolves paths in `~/.pi/agent/settings.json` relative to `~/.pi/agent`).
-6. Put the credential in Pi's private auth store, then run `pi --list-models featherless` before paid generation.
-7. Launch with `pi`.
+4. Install RTK 0.46.0 from its official Windows release asset after checking the ZIP against the release `checksums.txt`; run `rtk telemetry disable` and do not run `rtk init`.
+5. In `extensions/rtk`, run `npm test` and confirm `rtk --version` reports 0.46.0.
+6. Copy `models.example.json` to `~/.pi/agent/models.json`, adapting only authenticated context-derived limits when necessary.
+7. Copy the generated settings and `AGENTS.md` to `~/.pi/agent/` without replacing `auth.json` or session data, rewriting the relative `extensions` and `prompts` entries to absolute paths inside the clone (Pi resolves paths in `~/.pi/agent/settings.json` relative to `~/.pi/agent`).
+8. Put the credential in Pi's private auth store, then run `pi --list-models featherless` before paid generation.
+9. Launch with `pi`.
 
 Run `node scripts/verify-featherless-qwen-profile.mjs profiles/featherless-qwen38` from the repository root to validate the published profile. The machine setup also keeps a timestamped, checksummed pre-change backup for rollback.
