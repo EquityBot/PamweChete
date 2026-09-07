@@ -34,5 +34,5 @@ Progress/info logs go to stderr. On failure (no English captions, network error,
 ## Notes
 
 - Only English captions are attempted (`en`, `en-US`, `en-GB`, then any `en*`). Manual captions are preferred over auto-generated.
-- Transcript is plain text with timing/formatting stripped — not timestamped.
+- Transcript is plain text with timing/formatting stripped, not timestamped.
 - For non-English videos or videos with captions disabled, the script will fail; consider `video_extract` with a Gemini prompt as a fallback.

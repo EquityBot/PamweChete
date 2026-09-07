@@ -51,7 +51,7 @@ background browser is left running.
 | Tool | Purpose |
 |---|---|
 | `browser_goto`       | Navigate to a URL. Returns `{ status, finalUrl }`. |
-| `browser_eval`       | Run JS in the page. Expression, function source, or already-called IIFE — all three work. Return value must be JSON-serializable. |
+| `browser_eval`       | Run JS in the page. Expression, function source, or already-called IIFE, all three work. Return value must be JSON-serializable. |
 | `browser_console`    | Drain buffered console + pageerror entries (filterable, bounded to 1000). |
 | `browser_network`    | Drain buffered network requests. Default output is terse (`status method url`); pass `verbose: true` and/or `includeHeaders: [...]` to inline curated request/response headers on each row. |
 | `browser_fill`       | Type a value into an input matched by selector. |
@@ -60,7 +60,7 @@ background browser is left running.
 | `browser_close`      | Kill the persistent context. |
 
 All page-touching tools serialize through a single internal queue, so it's
-safe to fire several `browser_*` calls in one batch — they run in submission
+safe to fire several `browser_*` calls in one batch; they run in submission
 order against the shared Page rather than racing each other.
 
 The `/browser` command also controls the enable gate (`on` / `off` / bare
@@ -86,14 +86,14 @@ for status; `close` and `kill` are aliases for `off`).
 
 ## Network output: terse by default, headers on opt-in
 
-`browser_network` keeps the default text payload minimal — one line per
-request, `status method url` — because a single SPA page load fires 30–100
+`browser_network` keeps the default text payload minimal, one line per
+request, `status method url`, because a single SPA page load fires 30–100
 subresource requests and inlining headers on all of them would drown the
 agent's context window in noise.
 
 When you actually want headers (the auth-debugging use case), opt in:
 
-- `verbose: true` — inline a curated set of request/response headers on each
+- `verbose: true`: inline a curated set of request/response headers on each
   returned row. The curated set is small on purpose:
 
   ```
@@ -101,7 +101,7 @@ When you actually want headers (the auth-debugging use case), opt in:
   content-profile, prefer, location, www-authenticate, retry-after
   ```
 
-- `includeHeaders: ["cookie", "cache-control", ...]` — extend the curated set
+- `includeHeaders: ["cookie", "cache-control", ...]`: extend the curated set
   for this call only (case-insensitive). Implies `verbose: true`.
 
 All headers are captured into the ring buffer regardless; `verbose` /
@@ -118,13 +118,13 @@ to peek without draining.
 
 - `playwright-core` ships without browser binaries; the `npx playwright install
   chromium` step above is required exactly once per machine.
-- The page object is a singleton — there's no tab/window management. If you
+- The page object is a singleton; there's no tab/window management. If you
   need multiple tabs, extend `ensurePage` to accept a tab id.
 - `browser_eval` evaluates the source once and, if the result is a function,
   calls it. So expressions (`localStorage.length`), function values
   (`() => doStuff()`), and already-called IIFEs (`(() => 42)()`) all do what
   you'd expect. Note: top-level `return` and multi-statement bodies aren't
-  valid expressions — wrap them in `(() => { ... })()`.
+  valid expressions; wrap them in `(() => { ... })()`.
 - For DOM nodes, return primitive properties (`.outerHTML`, `.textContent`,
   `.value`) rather than the node itself; Playwright serializes nodes as the
   opaque sentinel `"ref: <Node>"`.
@@ -140,7 +140,7 @@ to peek without draining.
   even though the JS side saw a successful response. Consume the body if you
   want a clean status row.
 - Network buffer captures headers but not bodies. Add `request.postData()` /
-  `response.text()` capture if you need bodies (will eat context fast — gate
+  `response.text()` capture if you need bodies (will eat context fast, gate
   it behind a flag).
 - No download / file-upload helpers yet. Add when needed.
 - OTP / 2FA: the extension has no mail integration. Human still has to paste the code into `browser_fill`.
@@ -151,6 +151,6 @@ to peek without draining.
 - `browser_request_body` to expose request/response bodies on demand without
   ballooning the default network buffer.
 - Mail-fetch tool (Gmail API or Mailpit) so OTP logins can be fully automated.
-- `fly_logs` companion tool — `flyctl logs -a <app>` tailed into a similar
-  ring buffer — so the agent can correlate frontend behavior with backend
+- `fly_logs` companion tool, `flyctl logs -a <app>` tailed into a similar
+  ring buffer, so the agent can correlate frontend behavior with backend
   errors without context switching.

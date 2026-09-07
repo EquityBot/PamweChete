@@ -42,13 +42,9 @@ function rejectCredentialMaterial(value, location = "configuration") {
 }
 
 function collectFiles(directory) {
-	const files = [];
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		const path = join(directory, entry.name);
-		if (entry.isDirectory()) files.push(...collectFiles(path));
-		else if (entry.isFile()) files.push(path);
-	}
-	return files;
+	return readdirSync(directory, { recursive: true, withFileTypes: true })
+		.filter((entry) => entry.isFile())
+		.map((entry) => join(entry.parentPath, entry.name));
 }
 
 function isInside(parent, child) {
@@ -168,8 +164,7 @@ export function verifyProfile(profileDirectory) {
 
 	for (const path of collectFiles(profile)) {
 		const text = readFileSync(path, "utf8");
-		if (KEY_LIKE_PATTERN.test(text)) throw new Error("profile contains a key-like string");
-		KEY_LIKE_PATTERN.lastIndex = 0;
+		if (text.match(KEY_LIKE_PATTERN)) throw new Error("profile contains a key-like string");
 	}
 
 	const agents = requiredFile(join(profile, "AGENTS.md"), "AGENTS.md");

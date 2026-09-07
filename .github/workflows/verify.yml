@@ -26,6 +26,8 @@ jobs:
           node-version: "22"
       - name: Verify Featherless Qwen profile
         run: node scripts/verify-featherless-qwen-profile.mjs profiles/featherless-qwen38
+      - name: Test the profile verifier
+        run: node --test tests/verify-featherless-qwen-profile.test.mjs
       - name: Install bash-guard dependencies
         working-directory: extensions/bash-guard
         run: npm ci --ignore-scripts

@@ -42,7 +42,7 @@ Every playbook below is a variation on this:
 5. Form a hypothesis. Make a code change. Re-run the loop to verify.
 
 State (cookies, localStorage, IndexedDB) is persistent across `browser_*`
-calls, across turns, and across pi restarts — a session you opened earlier
+calls, across turns, and across pi restarts: a session you opened earlier
 is still open now. That's a feature: don't `browser_close` between steps.
 
 ## Playbooks
@@ -61,7 +61,7 @@ browser_eval      expression=Object.keys(localStorage)   # did a session land?
 
 If the network call to `/auth/v1/token` returns 200 but no session shows up in
 localStorage, the bug is in the client SDK's storage adapter, not the server.
-If the network call returns 400/401, the bug is upstream — read the response
+If the network call returns 400/401, the bug is upstream; read the response
 status and the request body.
 
 ### Why is this request failing
@@ -108,7 +108,7 @@ browser_eval expression=`(() => {
 })()`
 ```
 
-Useful when the user reports "I'm logged in but the API thinks I'm anon" —
+Useful when the user reports "I'm logged in but the API thinks I'm anon",
 inspect `role`, `aud`, `exp` directly.
 
 ### Form not submitting
@@ -137,7 +137,7 @@ browser_eval      expression=document.body.innerHTML.length
 A blank screen with console errors is almost always a runtime JS error during
 render (React/Vue/Svelte tear down the tree on uncaught errors). A blank
 screen with *no* console errors and `innerHTML.length === 0` is a routing or
-build issue — fetch the page with `web_fetch` and check the served HTML.
+build issue: fetch the page with `web_fetch` and check the served HTML.
 
 ### Reproduce in prod
 
@@ -146,7 +146,7 @@ authenticated. So:
 
 ```
 browser_goto      url=<prod url>
-# you may already be logged in from a previous turn — check first
+# you may already be logged in from a previous turn, check first
 browser_eval      expression=Object.keys(localStorage)
 # if not, run the auth playbook against prod
 ```
@@ -173,7 +173,7 @@ saying "this should work" is a strictly weaker claim than
 
 ## Pitfalls
 
-These are the ones that have already bitten — internalize them.
+These are the ones that have already bitten; internalize them.
 
 - **`fetch()` without consuming the body** shows up as `ERR net::ERR_ABORTED`
   in `browser_network`, even when the JS side saw a 200. If you do quick
@@ -183,7 +183,7 @@ These are the ones that have already bitten — internalize them.
   itself or `document.body`.
 - **`button[type=submit]` is an HTML attribute selector**, not a DOM property
   selector. A `<button>Submit</button>` has DOM `.type === "submit"` by
-  default, but no `type` attribute — the selector won't match. Use
+  default, but no `type` attribute, so the selector won't match. Use
   `text=Submit` or `role=button[name=Submit]`.
 - **`browser_console` / `browser_network` drain the entire buffer by default.**
   If you want to read one thing without losing the rest, pass `clear: false`.
@@ -197,5 +197,5 @@ These are the ones that have already bitten — internalize them.
 - If the question is purely about source code, read the source. The browser
   doesn't tell you why a function was written, only what it does at runtime.
 - If you need to verify behavior across many URLs at scale, write a script
-  and run it with `bash` — the browser kit is for interactive debugging, not
+  and run it with `bash`; the browser kit is for interactive debugging, not
   batch crawling.

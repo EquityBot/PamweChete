@@ -8,7 +8,7 @@ the session is interactive (main session) or non-interactive (spawned subagent).
 Behaviour is determined at registration time via the `PI_SUBAGENT_DEPTH` environment variable,
 which pi-subagents injects into every spawned process.
 
-### Main session (`PI_SUBAGENT_DEPTH` = 0 or unset) — interactive prompt
+### Main session (`PI_SUBAGENT_DEPTH` = 0 or unset): interactive prompt
 
 - Heuristically detects destructive/questionable commands via shell-aware parsing
 - Allows read-only Git inspection without interruption (`status`, `diff`, `log`, `show`,
@@ -33,7 +33,7 @@ which pi-subagents injects into every spawned process.
 - If aborted, the tool call is blocked and the model receives a clear reason
 - Remembers recently aborted commands for 60 s to prevent retry loops
 
-### Subagent (`PI_SUBAGENT_DEPTH` ≥ 1) — headless hard-block
+### Subagent (`PI_SUBAGENT_DEPTH` ≥ 1): headless hard-block
 
 Spawned subagents have no UI (stdin is `/dev/null`), so prompting is impossible. Instead,
 a focused set of catastrophic/unrecoverable operations is blocked with no user interaction.

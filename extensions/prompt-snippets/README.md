@@ -2,7 +2,7 @@
 
 Mix-and-match single-purpose prompt rules that are prepended or appended to
 your message when you send it. Unlike skills, each snippet is a tiny,
-standalone instruction — toggle exactly the ones you want per message.
+standalone instruction; toggle exactly the ones you want per message.
 
 ## Usage
 
@@ -15,8 +15,8 @@ standalone instruction — toggle exactly the ones you want per message.
     exceeds the viewport (max height adapts to your terminal), with
     `↑ n more` / `↓ n more` indicators when clipped.
 - Active snippets show up as a widget above the editor:
-  - `↑ prepend: ...` (accent color) — inserted before your message
-  - `↓ append: ...` (warning color) — inserted after your message
+  - `↑ prepend: ...` (accent color): inserted before your message
+  - `↓ append: ...` (warning color): inserted after your message
 - When you send a message, active snippet bodies are merged into the message
   text: prepend group (sorted by `order`) → your text → append group (sorted
   by `order`), separated by blank lines.
@@ -24,7 +24,7 @@ standalone instruction — toggle exactly the ones you want per message.
 
 ## Snippet files
 
-Snippets live in `snippets/` next to `index.ts` — one markdown file each,
+Snippets live in `snippets/` next to `index.ts`, one markdown file each,
 with frontmatter:
 
 ```markdown
@@ -45,4 +45,4 @@ Keep your response concise. Skip preamble and unnecessary explanation.
 | `order` | no | Number; sorts snippets within their group, in the menu and in the applied text (default: `9999`, ties broken by name) |
 
 Files are re-scanned every time the menu opens and every time a message is
-sent, so edits take effect immediately — no `/reload` needed.
+sent, so edits take effect immediately; no `/reload` needed.

@@ -9,7 +9,7 @@ Tools for querying past pi sessions. All scripts are stdlib Python 3, no depende
 
 ## Data shape (one-liner)
 
-Each session is a JSONL file. Records are `session` (header with `cwd`, `id`, `timestamp`), `model_change`, `thinking_level_change`, and `message` (roles: `user`, `assistant`, `toolResult`). Assistant messages carry `usage.cost` already split into input/output/cacheRead/cacheWrite/total — cost analysis is just summing those. Subagent transcripts live nested inside the parent session's directory.
+Each session is a JSONL file. Records are `session` (header with `cwd`, `id`, `timestamp`), `model_change`, `thinking_level_change`, and `message` (roles: `user`, `assistant`, `toolResult`). Assistant messages carry `usage.cost` already split into input/output/cacheRead/cacheWrite/total, so cost analysis is just summing those. Subagent transcripts live nested inside the parent session's directory.
 
 ## Scripts
 
@@ -19,7 +19,7 @@ All scripts share the same filter vocabulary (see "Shared filters" below). Run t
 python3 ~/.pi/agent/skills/analyze-sessions/scripts/<script>.py [args]
 ```
 
-### `cost.py` — cost rollups
+### `cost.py`: cost rollups
 
 Subagent costs are **included by default** so totals reflect actual spend. Pass `--show-subagents` to see the subagent share per row, or `--no-subagents` to exclude.
 
@@ -48,7 +48,7 @@ python3 cost.py --since 30d --by day --json
 
 Groupings: `total`, `day`, `project`, `model`, `session`. When grouping, `--limit` caps groups, not sessions.
 
-### `prompts.py` — dump user prompts for pattern mining
+### `prompts.py`: dump user prompts for pattern mining
 
 Output is markdown grouped by project (`--format jsonl` available). Prompts above `--max-chars` are dropped because they're almost always pasted context, not actual prompting.
 
@@ -71,7 +71,7 @@ The typical workflow for "find patterns I could turn into global instructions":
 2. Group by recurring themes (same correction repeated across projects, same setup question, same complaint).
 3. Propose additions to global `CLAUDE.md` / project AGENTS.md / pi instructions.
 
-### `show_session.py` — render one session as markdown
+### `show_session.py`: render one session as markdown
 
 ```bash
 # The most recent session
@@ -92,7 +92,7 @@ python3 show_session.py --session 019e475b --max-thinking -1 --max-tool-output 8
 
 Each tool result is fenced with `…[N more chars elided]…` if truncated. Default truncations: tool output 2000, assistant text 4000, thinking 600. Pass `0` to a limit to disable it, `-1` to `--max-thinking` to omit thinking entirely.
 
-### `search.py` — search across transcripts
+### `search.py`: search across transcripts
 
 Substring by default, regex with `--regex` (smart-case). Searches both user and assistant text by default.
 

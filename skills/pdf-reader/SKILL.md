@@ -27,7 +27,7 @@ All scripts are in `SKILL_DIR/scripts/`.
 
 | Script | Purpose | Key args |
 |---|---|---|
-| `pdf_info.py <path>` | Metadata + per-page analysis (page count, TOC, text density, math density, image count) | — |
+| `pdf_info.py <path>` | Metadata + per-page analysis (page count, TOC, text density, math density, image count) | - |
 | `pdf_extract.py <path> [--pages SPEC]` | Extract text by page | `--pages all\|1-5\|1,3,7\|3` |
 | `pdf_render.py <path> [--pages SPEC] [--dpi N]` | Render pages to PNG images in `/tmp/pi-pdf-*/` | `--pages`, `--dpi` (default 150) |
 | `pdf_search.py <path> <query> [--context N] [--literal]` | Search text content by regex or literal | `--context` lines (default 3), `--literal` flag |
@@ -60,18 +60,18 @@ Run `pdf_info.py` on every new PDF before doing anything else. This tells you:
 - For the rest, text extraction is sufficient
 
 #### Long PDFs (60+ pages)
-- Extract text for a structural overview — focus on TOC and section headers
+- Extract text for a structural overview, focus on TOC and section headers
 - Do NOT render all pages (too many tokens)
 - For targeted questions: use `pdf_search.py` to find relevant pages, then render those
 - For full comprehension: work section by section, summarizing as you go
-- Warn the user about scope — offer to focus on specific sections
+- Warn the user about scope, offer to focus on specific sections
 
 ### Step 3: Targeted Lookups
 
 When the user asks about something specific (e.g., "check theorem 3.2", "what's on page 7"):
-1. `pdf_search.py <path> "theorem 3.2"` — find the page
-2. `pdf_render.py <path> --pages <page>` — render just that page
-3. `read` the image — see the actual theorem with proper math rendering
+1. `pdf_search.py <path> "theorem 3.2"`: find the page
+2. `pdf_render.py <path> --pages <page>`: render just that page
+3. `read` the image to see the actual theorem with proper math rendering
 4. If context is needed, extract text from surrounding pages
 
 ### Step 4: Visual Reading Guidelines
@@ -81,13 +81,13 @@ When reading rendered page images:
 - **200 DPI** if equations are small, dense, or hard to read at 150
 - **100 DPI** only for quick structural scanning (saves tokens)
 - State equations explicitly in your response using LaTeX notation when discussing them
-- Describe diagrams and figures in detail — the user may not be looking at the PDF simultaneously
+- Describe diagrams and figures in detail; the user may not be looking at the PDF simultaneously
 - Note page numbers when referencing content so the user can find it
 
 ### Step 5: What to Watch For
 
-- **Pages with low text_length but high image_count**: likely full-page diagrams or figures — always render these
-- **Pages with high math_density**: equations that text extraction will mangle — always render these
+- **Pages with low text_length but high image_count**: likely full-page diagrams or figures, always render these
+- **Pages with high math_density**: equations that text extraction will mangle, always render these
 - **Pages with decent text but zero math**: text extraction alone is fine, skip rendering
 - **TOC entries**: use these to navigate structurally rather than reading linearly
 
