@@ -328,7 +328,7 @@ export default function browserExtension(pi: ExtensionAPI) {
         // wrapped them in `(<src>)()`. That double-wrapped already-called
         // IIFEs like `(() => 42)()` into `((() => 42)())()` → `42()` → TypeError.
         //
-        // Robust approach: ask the page itself. Evaluate the source once,
+        // Evaluate the source once in the page,
         // and if the result is a function, call it. This handles all three
         // forms (plain expr, function value, IIFE) without ambiguity.
         const src = params.expression;
