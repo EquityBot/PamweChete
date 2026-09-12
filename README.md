@@ -1,23 +1,27 @@
 # PamweChete
 
-This fork preserves Amos Blomqvist's original pi-config and its first-person narrative, with Ryan Duguid's additions layered on top.
+Ryan Duguid's personal [pi](https://github.com/earendil-works/pi) configuration, derived from Amos Blomqvist's [pi-config](https://github.com/amosblomqvist/pi-config) and extended from there.
 
 Clone: `https://github.com/ryanduguid/PamweChete.git`
 
-[![video](assets/thumbnail.png)](https://www.youtube.com/@EeroAlvar)
-
-My personal [pi](https://github.com/earendil-works/pi) configuration.
-
-The setup from [My Pi Setup After 6 Months](https://www.youtube.com/@EeroAlvar) (and its predecessor, [Pi Coding Agent Setup After 2 Months](https://www.youtube.com/watch?v=DWWrLlM3gwQ)).
-
 This is not meant to be installed as one big package. Browse the repo and copy the pieces you want into your own Pi config.
 
-Some extensions are big enough to live in their own repositories:
+## Upstream and licensing
+
+Most of the extensions and skills here, and the shape of this README, started as Amos Blomqvist's [pi-config](https://github.com/amosblomqvist/pi-config). That work remains his. He walks through the original setup in [My Pi Setup After 6 Months](https://www.youtube.com/@EeroAlvar) and its predecessor [Pi Coding Agent Setup After 2 Months](https://www.youtube.com/watch?v=DWWrLlM3gwQ), on the channel that `assets/thumbnail.png` links to.
+
+[![video](assets/thumbnail.png)](https://www.youtube.com/@EeroAlvar)
+
+`amosblomqvist/pi-config` publishes no licence file, so there is no upstream licence for this repository to carry, and none is asserted on his behalf here. The derived parts are redistributed on the same unstated terms as upstream; nothing in this repository re-licenses them. Anyone wanting clear terms should ask Amos Blomqvist. This repository stays private.
+
+[`extensions/rtk/`](extensions/rtk/) is the one part with explicit terms. It adapts the Pi hook from [rtk-ai/rtk](https://github.com/rtk-ai/rtk) and carries that project's Apache-2.0 licence as [`extensions/rtk/LICENSE`](extensions/rtk/LICENSE).
+
+Amos Blomqvist keeps several of his extensions in their own repositories, which this one does not vendor:
 
 - **[pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents)**: async, interactive subagents in multiplexer panes
 - **[pi-observational-memory](https://github.com/amosblomqvist/pi-observational-memory)**: tiered session memory with deterministic compaction
 - **[pi-dictate](https://github.com/amosblomqvist/pi-dictate)**: real-time voice dictation inside pi
-- **[learn](https://github.com/amosblomqvist/learn)**: my AI learning system, built on top of this config
+- **[learn](https://github.com/amosblomqvist/learn)**: his learning system, built on top of the original config
 
 This repo contains everything else.
 
