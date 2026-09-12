@@ -3,9 +3,12 @@
 
 import sys
 import os
-import hashlib
 import argparse
+from pathlib import Path
+import tempfile
 import pymupdf
+
+MAX_RENDER_DIRECTORIES = 64
 
 
 def parse_pages(spec: str, total: int) -> list[int]:
@@ -28,28 +31,36 @@ def parse_pages(spec: str, total: int) -> list[int]:
     return sorted(pages)
 
 
+def private_output_directory() -> str:
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") if os.name == "nt" else Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    cache = base / "pi-pdf-reader"
+    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if cache.is_symlink() or getattr(cache, "is_junction", lambda: False)():
+        raise ValueError("PDF cache must be an ordinary user-owned directory.")
+    if os.name != "nt":
+        if cache.stat().st_uid != os.getuid():
+            raise ValueError("PDF cache belongs to another user.")
+        cache.chmod(0o700)
+    if sum(1 for _ in cache.glob("render-*")) >= MAX_RENDER_DIRECTORIES:
+        raise ValueError("PDF render cache is full. Remove completed render directories before rendering again.")
+    # Unique private children avoid reusing pre-existing output files.
+    return tempfile.mkdtemp(prefix="render-", dir=cache)
+
+
 def render(path: str, page_spec: str = "all", dpi: int = 150) -> list[str]:
-    doc = pymupdf.open(path)
-    pages = parse_pages(page_spec, len(doc))
-
-    # Create output directory based on file hash for caching
-    file_hash = hashlib.md5(os.path.abspath(path).encode()).hexdigest()[:10]
-    out_dir = os.path.join("/tmp", f"pi-pdf-{file_hash}")
-    os.makedirs(out_dir, exist_ok=True)
-
-    zoom = dpi / 72.0
-    mat = pymupdf.Matrix(zoom, zoom)
-
-    output_paths = []
-    for i in pages:
-        page = doc[i]
-        pix = page.get_pixmap(matrix=mat)
-        out_path = os.path.join(out_dir, f"page_{i + 1:04d}.png")
-        pix.save(out_path)
-        output_paths.append(out_path)
-        print(f"Page {i + 1} -> {out_path}")
-
-    doc.close()
+    with pymupdf.open(path) as doc:
+        pages = parse_pages(page_spec, len(doc))
+        out_dir = private_output_directory()
+        zoom = dpi / 72.0
+        mat = pymupdf.Matrix(zoom, zoom)
+        output_paths = []
+        for i in pages:
+            page = doc[i]
+            pix = page.get_pixmap(matrix=mat)
+            out_path = os.path.join(out_dir, f"page_{i + 1:04d}.png")
+            pix.save(out_path)
+            output_paths.append(out_path)
+            print(f"Page {i + 1} -> {out_path}")
     return output_paths
 
 

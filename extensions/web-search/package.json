@@ -1,0 +1,10 @@
+{
+  "name": "pi-web-search",
+  "private": true,
+  "type": "module",
+  "pi": { "extensions": ["./index.ts"] },
+  "peerDependencies": {
+    "typebox": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

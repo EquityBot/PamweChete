@@ -87,8 +87,8 @@ Common patterns the headers reveal:
 ```
 browser_goto      url=<app url>
 browser_eval      expression=Object.keys(localStorage)
-browser_eval      expression=Object.fromEntries(Object.entries(localStorage))
-browser_eval      expression=document.cookie
+browser_eval      expression=Object.keys(localStorage).map(key=>({key,present:true}))
+browser_eval      expression=document.cookie.split(';').map(item=>item.split('=')[0].trim()).filter(Boolean)
 ```
 
 For Supabase specifically the session key is

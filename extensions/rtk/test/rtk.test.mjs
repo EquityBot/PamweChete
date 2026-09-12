@@ -16,9 +16,9 @@ function extensionFactory() {
 	return rtkModule.default;
 }
 
-test("vendored hook bytes match the pinned upstream commit", () => {
+test("local hook matches its recorded LF-normalised digest", () => {
 	assert.equal(existsSync(INDEX_PATH), true, "the vendored RTK hook is missing");
-	const digest = createHash("sha256").update(readFileSync(INDEX_PATH)).digest("hex");
+	const digest = createHash("sha256").update(readFileSync(INDEX_PATH, "utf8").replaceAll("\r\n", "\n")).digest("hex");
 	assert.equal(digest, PINNED_HOOK_SHA256);
 });
 

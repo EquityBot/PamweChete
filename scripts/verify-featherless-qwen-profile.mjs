@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MODEL_ID = "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU";
 const MODEL_REF = `featherless/${MODEL_ID}`;
-const KEY_LIKE_PATTERN = /rc_[A-Za-z0-9]{32,}/g;
+const KEY_LIKE_PATTERN = /\b(?:rc_[A-Za-z0-9]{32,}|sk-[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._~+\/-]{20,}=*)/gi;
 const LEAN_TOOLS = ["read", "bash", "edit", "write", "ask_user_question"];
 const EXPANDED_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write", "ask_user_question"];
 
@@ -31,12 +31,15 @@ function rejectCredentialMaterial(value, location = "configuration") {
 	}
 	if (value && typeof value === "object") {
 		for (const [key, item] of Object.entries(value)) {
-			if (key.toLowerCase() === "apikey") throw new Error(`${location} contains an apiKey field`);
+			const normalised = key.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+			if (["apikey", "accesstoken", "refreshtoken", "authorization"].includes(normalised)) {
+				throw new Error(`${location} contains an apiKey or credential field`);
+			}
 			rejectCredentialMaterial(item, location);
 		}
 		return;
 	}
-	if (typeof value === "string" && /rc_[A-Za-z0-9]{32,}/.test(value)) {
+	if (typeof value === "string" && value.match(KEY_LIKE_PATTERN)) {
 		throw new Error(`${location} contains a key-like string`);
 	}
 }

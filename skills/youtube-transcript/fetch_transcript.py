@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import json
+from urllib.parse import urlsplit
 
 
 def get_metadata(url):
@@ -20,6 +21,7 @@ def get_metadata(url):
         "--dump-json",
         "--no-warnings",
         "--skip-download",
+        "--",
         url,
     ]
     try:
@@ -69,6 +71,7 @@ def download_subtitle(url, lang, is_auto, outdir):
         "--sub-langs", lang,
         "--write-auto-subs" if is_auto else "--write-subs",
         "-o", os.path.join(outdir, "%(id)s.%(ext)s"),
+        "--",
         url,
     ]
     try:
@@ -103,6 +106,17 @@ def main():
         sys.exit(1)
 
     url = sys.argv[1]
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        valid = parsed.scheme == "https" and (
+            host in {"youtube.com", "youtu.be"} or host.endswith(".youtube.com")
+        ) and parsed.username is None and parsed.password is None
+    except ValueError:
+        valid = False
+    if not valid:
+        print("Expected an HTTPS YouTube URL.", file=sys.stderr)
+        sys.exit(1)
 
     print("Fetching video metadata...", file=sys.stderr)
     info = get_metadata(url)

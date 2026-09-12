@@ -10,6 +10,30 @@ import {
 	headlessBlockReason,
 } from "../policy.ts";
 
+test("known wrappers preserve the underlying command classification", () => {
+	for (const command of ["git commit -m update", "git diff --output=report.patch"]) {
+		for (const wrap of [value => `nohup ${value}`, value => `time -p ${value}`, value => `command -p ${value}`, value => `{ ${value}; }`, value => `env LANG=C nohup command ${value}`]) {
+			assert.deepEqual(analyzeBashCommand(wrap(command)), analyzeBashCommand(command), wrap(command));
+		}
+	}
+	assert.equal(analyzeBashCommand("command -v git"), null);
+});
+
+test("time option values cannot conceal the wrapped command", () => {
+	for (const options of ["-f '%E'", "--format '%E'", "--format=%E", "-f%E", "-o timing.txt", "--output timing.txt", "--output=timing.txt"]) {
+		const command = `time ${options} git reset --hard`;
+		assert.ok(analyzeBashCommand(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+		assert.ok(headlessBlockReason(command), command);
+	}
+	assert.equal(analyzeBashCommand("time -f '%E' git status"), null);
+	for (const command of ["time -o timing.txt git status", "time --unknown git status", "time -f", "time --format= git status"]) {
+		assert.ok(analyzeBashCommand(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+		assert.ok(headlessBlockReason(command), command);
+	}
+});
+
 test("routine read-only Git inspection does not prompt", () => {
 	const commands = [
 		"git status --short",

@@ -34,7 +34,7 @@ async function googleSearch(
 	cseId: string,
 	signal?: AbortSignal,
 ): Promise<SearchResult[]> {
-	const num = Math.min(count, 10);
+	const num = Math.max(1, Math.min(Math.trunc(Number.isFinite(count) ? count : 5), 10));
 	const url = new URL("https://www.googleapis.com/customsearch/v1");
 	url.searchParams.set("key", apiKey);
 	url.searchParams.set("cx", cseId);

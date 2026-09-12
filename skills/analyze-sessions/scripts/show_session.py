@@ -16,6 +16,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -195,9 +196,10 @@ def _render_tool_result(m: dict, ts: str, max_chars: int) -> None:
     print()
     if text:
         # Use a fenced block to preserve indentation.
-        print("```")
+        fence = "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
+        print(fence)
         print(text)
-        print("```")
+        print(fence)
         print()
 
 

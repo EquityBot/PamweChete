@@ -74,6 +74,8 @@ Avoid cloning this repo directly into `~/.pi/agent` unless it is a fresh setup. 
 - `bash-guard/`: hooks that catch dangerous bash commands before they run, with an on/off toggle
 - `browser/`: Playwright-driven headless Chromium the agent can drive (navigate, eval JS, inspect network/console, click, screenshot); off by default, enable with `/browser on`
 - `custom-header.ts`: the big capital Π header
+- `featherless-tool-bridge/`: validates and translates text tool envelopes from the older Featherless model
+- `rtk/`: asks RTK to compress supported Bash command output after bash-guard checks the command
 - `prompt-snippets/`: small, reusable behavior rules toggled onto a message before sending; reset after send
 - `web-fetch/`: fetch a URL and get clean markdown
 - `web-search/`: web search
@@ -96,6 +98,9 @@ Extension-local npm deps are kept with the extension. Run `npm install` only in 
 - `bash-guard/`
 - `browser/` (also run `npx playwright install chromium` once)
 - `web-fetch/`
+- `web-search/`
+
+`featherless-tool-bridge/` and `rtk/` have package manifests and tests but no npm dependencies to install.
 
 Optional system tools:
 
@@ -111,3 +116,8 @@ PDF reader setup after copying `skills/pdf-reader/`:
 python3 -m venv ~/.pi/agent/skills/pdf-reader/.venv
 ~/.pi/agent/skills/pdf-reader/.venv/bin/pip install -r ~/.pi/agent/skills/pdf-reader/requirements.txt
 ```
+
+Rendered images remain in the user's private `pi-pdf-reader` cache until they
+are removed. New renders stop when 64 render directories exist. Remove only
+completed directories after their images are no longer needed; existing image
+paths are never expired automatically.

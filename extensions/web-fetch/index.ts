@@ -477,7 +477,7 @@ async function extractWithJinaReader(
 		});
 		if (!res.ok) return null;
 
-		const content = await res.text();
+		const content = new TextDecoder().decode(await readBoundedBody(res, MAX_RESPONSE_SIZE));
 		const contentStart = content.indexOf("Markdown Content:");
 		if (contentStart < 0) return null;
 
@@ -501,6 +501,34 @@ async function extractWithJinaReader(
 }
 
 // ── Main HTTP Extraction ─────────────────────────────────────────────
+
+async function readBoundedBody(response: Response, maxSize: number): Promise<Uint8Array<ArrayBuffer>> {
+	const reader = response.body?.getReader();
+	if (!reader) return new Uint8Array(0);
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			size += value.byteLength;
+			if (size > maxSize) {
+				await reader.cancel();
+				throw new Error(`Response too large (${Math.round(size / 1024 / 1024)}MB)`);
+			}
+			chunks.push(value);
+		}
+	} finally {
+		reader.releaseLock();
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return bytes;
+}
 
 async function extractViaHttp(
 	url: string,
@@ -542,6 +570,7 @@ async function extractViaHttp(
 		if (contentLengthHeader) {
 			const contentLength = parseInt(contentLengthHeader, 10);
 			if (contentLength > maxSize) {
+				controller.abort();
 				return {
 					url, title: "", content: "",
 					error: `Response too large (${Math.round(contentLength / 1024 / 1024)}MB)`,
@@ -550,7 +579,7 @@ async function extractViaHttp(
 		}
 
 		if (isPDFContent) {
-			const buffer = await response.arrayBuffer();
+			const buffer = (await readBoundedBody(response, maxSize)).buffer;
 			return await extractPDF(buffer, url);
 		}
 
@@ -567,7 +596,7 @@ async function extractViaHttp(
 			};
 		}
 
-		const text = await response.text();
+		const text = new TextDecoder().decode(await readBoundedBody(response, maxSize));
 		const isHTML =
 			contentType.includes("text/html") ||
 			contentType.includes("application/xhtml+xml");

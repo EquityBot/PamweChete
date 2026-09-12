@@ -150,6 +150,24 @@ test("rejects a key-like string without echoing it", (context) => {
 	assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(synthetic));
 });
 
+test("rejects credential key variants and token formats recursively", (context) => {
+	const parent = mkdtempSync(join(tmpdir(), "pi-profile-variants-"));
+	context.after(() => rmSync(parent, { recursive: true, force: true }));
+	const profile = createValidProfile(parent);
+	const modelsPath = join(profile, "models.example.json");
+	const original = readFileSync(modelsPath, "utf8");
+	const cases = [
+		...["api_key", "API-KEY", "access_token", "Authorization", "refreshToken"].map(key => ({ [key]: "fabricated-value" })),
+		...[`rc_${"A".repeat(40)}`, `sk-${"A".repeat(40)}`, `Bearer ${"A".repeat(32)}`].map(value => ({ note: value })),
+	];
+	for (const value of cases) {
+		const models = JSON.parse(original);
+		models.extra = [{ nested: value }];
+		writeFileSync(modelsPath, JSON.stringify(models));
+		assert.throws(() => verifyProfile(profile), /credential|apiKey|key-like/i);
+	}
+});
+
 // The reverse of the rule the previous model needed: setting enable_thinking false makes this model
 // print a <tool_call> envelope as ordinary text instead of emitting a native tool call.
 test("rejects a profile that disables template thinking", (context) => {

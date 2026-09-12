@@ -1,17 +1,18 @@
 # RTK output compression
 
-This directory vendors the official thin Pi hook from [rtk-ai/rtk](https://github.com/rtk-ai/rtk). It asks the installed `rtk` binary to rewrite supported Bash commands so their output is compact before it enters Pi's context.
+This directory maintains a local adaptation of the thin Pi hook from [rtk-ai/rtk](https://github.com/rtk-ai/rtk). It asks the installed `rtk` binary to rewrite supported Bash commands so their output is compact before it enters Pi's context.
 
 ## Pin and provenance
 
 - RTK release: `v0.46.0`
 - Source repository: `https://github.com/rtk-ai/rtk`
 - Source path: `hooks/pi/rtk.ts`
-- Source commit: `322db4da98219b15608d5b71eddf6338c48d693c`
-- Vendored source SHA-256: `48f07e4fd8e38b350cae84fe0116d2bc29932d535e333a307cb9e477f5272de6`
+- Release commit: `8dae5a750fe307d1fee105a2ff4a9d1ca54ac791`
+- Release source SHA-256: `d278508809a5379e506384eabb19e17a672806c4eac7eabc1cd634699aea8c33`
+- Local source SHA-256 (LF): `48f07e4fd8e38b350cae84fe0116d2bc29932d535e333a307cb9e477f5272de6`
 - Licence: Apache-2.0; the upstream licence is included as `LICENSE`.
 
-`index.ts` is byte-for-byte identical to that upstream file. Rewrite rules stay in RTK itself rather than being copied into this configuration.
+`index.ts` replaces the release source's runtime type-guard import with a local guard and type-only imports. It is maintained in this repository; its LF-normalised digest and observable behaviour are checked locally. Rewrite rules stay in RTK itself rather than being copied into this configuration.
 
 ## Runtime contract
 

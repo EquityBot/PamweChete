@@ -462,7 +462,14 @@ export default function browserExtension(pi: ExtensionAPI) {
           }
         }
         const text = lines.join("\n") || "(empty)";
-        return { content: [{ type: "text", text }], details: { entries: out } };
+        const safeEntries = out.map(({ requestHeaders, responseHeaders, ...entry }) => ({
+          ...entry,
+          ...(showHeaders ? {
+            requestHeaders: filterHeaders(requestHeaders ?? {}, allow),
+            responseHeaders: filterHeaders(responseHeaders ?? {}, allow),
+          } : {}),
+        }));
+        return { content: [{ type: "text", text }], details: { entries: safeEntries } };
       });
     },
   });

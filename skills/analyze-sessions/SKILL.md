@@ -141,10 +141,10 @@ Available on **all four scripts**:
 | Total cost in the last 7 days | `python3 cost.py --since 7d --by total` |
 | Daily spend trend, last 30 days | `python3 cost.py --since 30d --by day` |
 | Most expensive projects this month | `python3 cost.py --since 30d --by project --limit 10` |
-| Most expensive sessions ever | `python3 cost.py --by session --limit 10 --until 1d` |
+| Most expensive sessions ever | `python3 cost.py --by session --limit 10` |
 | Cost of one project | `python3 cost.py --cwd /path/to/proj` |
 | Patterns in my prompting | `python3 prompts.py --since 30d --max-chars 1500` → read the output |
-| What did I do yesterday | `python3 show_session.py --latest --since 1d` |
+| What did I do in the last 24 hours | `python3 show_session.py --latest --since 1d` |
 | Where did the agent struggle | `python3 cost.py --since 30d --errors-only --by session --limit 10` |
 | Find old session about X | `python3 search.py "X"` |
 

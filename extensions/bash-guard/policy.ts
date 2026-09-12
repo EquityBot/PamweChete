@@ -60,6 +60,7 @@ function envExecReason(prefixTokens) {
 
 const ENV_OPTIONS_WITH_VALUES = new Set(["-u", "--unset", "-C", "--chdir"]);
 const ENV_SPLIT_STRING_COMMAND = -1;
+const UNSAFE_TIME_COMMAND = -2;
 const ENV_SPLIT_STRING_PIPE_COMMAND = "env-split-string";
 
 function isOpToken(token) {
@@ -111,6 +112,35 @@ function commandIndex(tokens, startIndex = 0) {
 		index += 1;
 	}
 	if (typeof tokens[index] !== "string") return null;
+	if (tokens[index] === "{") return commandIndex(tokens, index + 1);
+	const wrapper = commandName(tokens[index]);
+	if (wrapper === "time") {
+		let next = index + 1;
+		let writesOutput = false;
+		while (typeof tokens[next] === "string" && tokens[next].startsWith("-")) {
+			const option = tokens[next++];
+			if (option === "--") break;
+			if (["-p", "--portability", "-v", "--verbose", "-q", "--quiet", "-a", "--append"].includes(option)) continue;
+			if (["-f", "--format", "-o", "--output"].includes(option)) {
+				if (typeof tokens[next] !== "string" || !tokens[next] || tokens[next].startsWith("-")) return UNSAFE_TIME_COMMAND;
+				writesOutput ||= option === "-o" || option === "--output";
+				next += 1;
+			} else if (/^-[fo].+/.test(option) || /^--(?:format|output)=.+/.test(option)) {
+				writesOutput ||= option.startsWith("-o") || option.startsWith("--output=");
+			} else {
+				return UNSAFE_TIME_COMMAND;
+			}
+		}
+		// Output options can overwrite files, independently of the wrapped command.
+		if (writesOutput || typeof tokens[next] !== "string") return UNSAFE_TIME_COMMAND;
+		return commandIndex(tokens, next);
+	}
+	if (["nohup", "command"].includes(wrapper)) {
+		if (wrapper === "command" && /^(?:-[p]*[vV]|--(?:help|version))/.test(tokens[index + 1] ?? "")) return index;
+		let next = index + 1;
+		while (["--", "-p"].includes(tokens[next])) next += 1;
+		return commandIndex(tokens, next);
+	}
 	if (commandName(tokens[index]) !== "env") return index;
 	index += 1;
 	while (index < tokens.length && typeof tokens[index] === "string") {
@@ -134,7 +164,7 @@ function commandIndex(tokens, startIndex = 0) {
 		}
 		break;
 	}
-	return typeof tokens[index] === "string" ? index : null;
+	return commandIndex(tokens, index);
 }
 
 function hasShortFlag(args, flag) {
@@ -281,7 +311,7 @@ function isReadOnlyGitCommand(args) {
 
 function firstCommandAfterPipe(tokens, pipeIndex) {
 	const index = commandIndex(tokens, pipeIndex + 1);
-	if (index === ENV_SPLIT_STRING_COMMAND) return ENV_SPLIT_STRING_PIPE_COMMAND;
+	if (index === ENV_SPLIT_STRING_COMMAND || index === UNSAFE_TIME_COMMAND) return ENV_SPLIT_STRING_PIPE_COMMAND;
 	return index === null ? null : commandName(tokens[index]);
 }
 
@@ -374,6 +404,9 @@ function analyzeSegment(segment) {
 	let severity = "medium";
 	const index = commandIndex(segment);
 	if (index === null) return null;
+	if (index === UNSAFE_TIME_COMMAND) {
+		return { severity, reasons: ["time output or unsupported options require approval"] };
+	}
 	if (index === ENV_SPLIT_STRING_COMMAND) {
 		return { severity, reasons: ["env --split-string (opaque command execution)"] };
 	}
@@ -586,6 +619,7 @@ function catastrophicGitReason(args) {
 
 function catastrophicSegmentReason(segment) {
 	const index = commandIndex(segment);
+	if (index === UNSAFE_TIME_COMMAND) return "time output or unsupported options cannot be verified safely";
 	if (index === null || index === ENV_SPLIT_STRING_COMMAND) return null;
 	const envReason = envExecReason(tokensToStrings(segment.slice(0, index)));
 	if (envReason) return envReason;
