@@ -46,7 +46,7 @@ python3 cost.py --since 30d --by total
 python3 cost.py --since 30d --by day --json
 ```
 
-Groupings: `total`, `day`, `project`, `model`, `session`. When grouping, `--limit` caps groups, not sessions.
+Groupings: `total`, `day`, `project`, `model`, `session`. When grouping, `--limit` caps groups, not sessions, in the table and in `--json` alike. `--by day` runs chronologically and keeps the most recent groups; every other grouping runs dearest first and keeps the dearest.
 
 ### `prompts.py`: dump user prompts for pattern mining
 

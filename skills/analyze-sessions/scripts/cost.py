@@ -54,7 +54,7 @@ def main() -> int:
         return 0
 
     if args.json:
-        report = build_report(summaries, args.by)
+        report = build_report(summaries, args.by, group_limit)
         print(json.dumps(report, indent=2, default=str))
         return 0
 
@@ -110,7 +110,30 @@ def session_keys(s: S.SessionSummary, by: str):
         yield "all", s.cost_total
 
 
-def build_report(summaries, by: str) -> dict:
+def order_groups(rows: dict, by: str) -> list:
+    """Day runs chronologically; every other grouping runs dearest first."""
+    items = list(rows.items())
+    if by == "day":
+        # An undated session groups as "unknown", which sorts after every ISO
+        # date; put it first so the most-recent slice keeps the real days.
+        items.sort(key=lambda kv: (kv[0] != "unknown", kv[0]))
+    else:
+        items.sort(key=lambda kv: kv[1]["cost"], reverse=True)
+    return items
+
+
+def apply_group_limit(items: list, by: str, limit) -> list:
+    """--limit caps groups, in both the table and the JSON.
+
+    A cost-ordered grouping keeps the dearest groups. The day trend is
+    chronological, so it keeps the most recent days and stays in order:
+    trimming from the front would drop the days a reader asked for."""
+    if not limit:
+        return items
+    return items[-limit:] if by == "day" else items[:limit]
+
+
+def build_report(summaries, by: str, limit=None) -> dict:
     rows = defaultdict(lambda: dict(cost=0.0, sessions=0, messages=0, errors=0,
                                     sub_cost=0.0, sub_sessions=0))
     for s in summaries:
@@ -127,7 +150,7 @@ def build_report(summaries, by: str) -> dict:
         "grouping": by,
         "total_cost": sum(s.cost_total for s in summaries),
         "total_sessions": len(summaries),
-        "groups": dict(rows),
+        "groups": dict(apply_group_limit(order_groups(rows, by), by, limit)),
     }
 
 
@@ -158,18 +181,8 @@ def print_grand_total(summaries) -> None:
 
 
 def print_grouped(summaries, by: str, *, show_subagents: bool, limit) -> None:
-    report = build_report(summaries, by)
-    groups = report["groups"]
-
-    # Sort: day asc (chronological), session desc by cost, others desc by cost
-    items = list(groups.items())
-    if by == "day":
-        items.sort(key=lambda kv: kv[0])
-    else:
-        items.sort(key=lambda kv: kv[1]["cost"], reverse=True)
-
-    if limit and by != "day":
-        items = items[:limit]
+    # build_report already orders the groups and applies the group limit.
+    items = list(build_report(summaries, by, limit)["groups"].items())
 
     label = {"day": "DATE", "project": "PROJECT", "model": "MODEL",
              "session": "SESSION"}[by]

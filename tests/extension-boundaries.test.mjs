@@ -76,3 +76,20 @@ test("network details expose only the opted-in headers", async () => {
 		assert.equal(entry.responseHeaders?.["set-cookie"], undefined);
 	}
 });
+
+test("browser_eval renders undefined and null as distinct text", async () => {
+	// The guide said an undefined result becomes null. JSON.stringify produces
+	// nothing for undefined, so the renderer falls back to String(result) and
+	// the two are distinguishable.
+	let value;
+	const page = { on: () => {}, isClosed: () => false, goto: async () => ({ status: () => 200 }), url: () => "https://example.com/", evaluate: async () => value };
+	const module = await load("../extensions/browser/index.ts", "filterHeaders", {}, { "playwright-core": { chromium: { launchPersistentContext: async () => ({ pages: () => [page] }) } } });
+	const tools = new Map();
+	module.default({ registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, on() {}, getActiveTools: () => [], setActiveTools() {} });
+	await tools.get("browser_goto").execute("", { url: "https://example.com/" });
+	for (const [result, expected] of [[undefined, "undefined"], [null, "null"], [42, "42"], ["plain string", "plain string"]]) {
+		value = result;
+		const out = await tools.get("browser_eval").execute("", { expression: "fabricated" });
+		assert.equal(out.content[0].text, expected);
+	}
+});

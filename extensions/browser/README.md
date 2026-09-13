@@ -104,10 +104,16 @@ When you actually want headers (the auth-debugging use case), opt in:
 - `includeHeaders: ["cookie", "cache-control", ...]`: extend the curated set
   for this call only (case-insensitive). Implies `verbose: true`.
 
-All headers are captured into the ring buffer regardless; `verbose` /
-`includeHeaders` only affect what's rendered into the text output. Best
-paired with `urlFilter` / `status` so headers only appear on the rows you
+Every header Playwright reports is captured into the ring buffer regardless;
+`verbose` / `includeHeaders` only affect what's rendered into the text output.
+Best paired with `urlFilter` / `status` so headers only appear on the rows you
 actually care about.
+
+The capture uses Playwright's `request.headers()` and `response.headers()`,
+which omit security-related headers, cookie headers among them. So
+`includeHeaders: ["cookie"]` renders a cookie header only when one reached the
+buffer, and inspecting cookies this way does not work. Playwright offers
+`allHeaders()` for the complete set; this extension does not call it.
 
 Clear-on-read drains the **entire** buffer by default, not just the rows
 returned. This is intentional: subsequent calls observe a fresh activity
@@ -128,8 +134,11 @@ to peek without draining.
 - For DOM nodes, return primitive properties (`.outerHTML`, `.textContent`,
   `.value`) rather than the node itself; Playwright serialises nodes as the
   opaque sentinel `"ref: <Node>"`.
-- `browser_eval` returns `undefined` as `null` after JSON serialisation. Wrap
-  expressions in a function that returns a sentinel if you care.
+- `browser_eval` renders an `undefined` result as the text `undefined`, because
+  `JSON.stringify(undefined)` produces nothing and the renderer falls back to
+  `String(result)`. An actual `null` renders as the text `null`. The two read
+  differently, so wrap expressions in a function that returns a sentinel only if
+  you need something clearer than either.
 - `browser_click`: CSS attribute selectors match HTML attributes, not DOM
   properties. `button[type=submit]` will NOT match `<button>Submit</button>`
   even though that button's `.type === "submit"` by default. Prefer

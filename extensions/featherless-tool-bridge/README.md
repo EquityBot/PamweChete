@@ -60,9 +60,11 @@ disabled, Pi stores and displays only the text after `</think>`.
 The compatibility prompt defaults to full active-tool schemas. Set
 `PI_FEATHERLESS_COMPACT_SCHEMAS=1` to remove only JSON Schema annotation
 keywords (`description`, `title`, `examples`, `default`, `$comment`,
-`deprecated`, `readOnly` and `writeOnly`) from the provider-facing copy. All
-structural and validation keywords are retained, and Pi's original schemas are
-not mutated. Set the value to `0` to force full schemas. Any other value uses
+`deprecated`, `readOnly` and `writeOnly`) from the provider-facing copy. Those
+keywords are removed only where they are annotations. A property named `title`
+or `description`, and a literal `const` or `enum` value holding a member of that
+name, are left alone. All structural and validation keywords are retained, and
+Pi's original schemas are not mutated. Set the value to `0` to force full schemas. Any other value uses
 the benchmark-selected default documented by the profile.
 
 The 2026-08-28 live A/B selected full schemas. Compact mode failed the

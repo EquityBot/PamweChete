@@ -360,6 +360,43 @@ test("compact schemas remove annotations without changing validation or input", 
 	});
 });
 
+test("compact schemas keep property names and literal values that match annotation keywords", () => {
+	// The recursion removed matching key names at every object level, so a
+	// property named "title" lost its definition while "required" and
+	// "additionalProperties: false" still referred to it, and a const literal
+	// lost one of its members.
+	const compactToolSchema = requiredProtocolExport("compactToolSchema");
+	const schema = {
+		type: "object",
+		properties: {
+			title: { type: "string", description: "The article title" },
+			description: { type: "string" },
+			marker: { const: { title: "Required literal", count: 1 } },
+			state: { enum: [{ title: "open" }, { title: "closed" }] },
+		},
+		required: ["title", "description"],
+		additionalProperties: false,
+		$defs: { title: { type: "string", title: "Title" } },
+	};
+	const before = structuredClone(schema);
+
+	const compact = compactToolSchema(schema);
+
+	assert.deepEqual(schema, before);
+	assert.deepEqual(compact, {
+		type: "object",
+		properties: {
+			title: { type: "string" },
+			description: { type: "string" },
+			marker: { const: { title: "Required literal", count: 1 } },
+			state: { enum: [{ title: "open" }, { title: "closed" }] },
+		},
+		required: ["title", "description"],
+		additionalProperties: false,
+		$defs: { title: { type: "string" } },
+	});
+});
+
 test("compact prompt mode serialises fewer schema characters", () => {
 	const tools = [{
 		name: "write",

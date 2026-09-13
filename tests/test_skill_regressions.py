@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills/analyze-sessions/scripts"))
+import cost
 import sessions
 import show_session
 
@@ -43,6 +44,54 @@ class SkillRegressionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "cache is full"):
                     pdf_render.private_output_directory()
             self.assertEqual(marker.read_bytes(), b"synthetic image placeholder")
+
+    @staticmethod
+    def _fabricated_summary(day: str, session_id: str, amount: float):
+        """One fabricated session. Local-aware so the day key is stable."""
+        from datetime import datetime
+        started = datetime.fromisoformat(day + "T12:00:00").astimezone()
+        return SimpleNamespace(
+            started_at=started, id=session_id, cwd="/fabricated/project",
+            cost_total=amount, message_count=1, error_count=0,
+            is_subagent=False, models=["fabricated-model"],
+        )
+
+    def test_group_limit_caps_groups_in_json_and_in_the_daily_table(self):
+        # --limit is documented as a cap on groups. The JSON branch returned
+        # every group, and the text branch skipped the cap for --by day.
+        made = [self._fabricated_summary("2026-01-01", "older", 1.0),
+                self._fabricated_summary("2026-01-02", "newer", 9.0)]
+
+        self.assertEqual(list(cost.build_report(made, "session", 1)["groups"]), ["newer"])
+        self.assertEqual(list(cost.build_report(made, "day", 1)["groups"]), ["2026-01-02"])
+
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            cost.print_grouped(made, "day", show_subagents=False, limit=1)
+        self.assertIn("2026-01-02", printed.getvalue())
+        self.assertNotIn("2026-01-01", printed.getvalue())
+
+    def test_undated_sessions_do_not_displace_the_most_recent_day(self):
+        # "unknown" sorts after every ISO date, so it used to survive the
+        # most-recent slice while the real latest day was dropped.
+        undated = SimpleNamespace(
+            started_at=None, id="undated", cwd="/fabricated/project",
+            cost_total=5.0, message_count=1, error_count=0,
+            is_subagent=False, models=["fabricated-model"],
+        )
+        made = [self._fabricated_summary("2026-01-01", "older", 1.0),
+                self._fabricated_summary("2026-01-02", "newer", 9.0), undated]
+        groups = list(cost.build_report(made, "day", 1)["groups"])
+        self.assertEqual(groups, ["2026-01-02"])
+        self.assertEqual(list(cost.build_report(made, "day")["groups"]),
+                         ["unknown", "2026-01-01", "2026-01-02"])
+
+    def test_group_limit_left_out_returns_every_group(self):
+        made = [self._fabricated_summary("2026-01-01", "older", 1.0),
+                self._fabricated_summary("2026-01-02", "newer", 9.0)]
+        report = cost.build_report(made, "day")
+        self.assertEqual(list(report["groups"]), ["2026-01-01", "2026-01-02"])
+        self.assertEqual(report["total_cost"], 10.0)
 
     def test_undated_session_is_excluded_by_each_date_bound(self):
         session = SimpleNamespace(started_at=None)

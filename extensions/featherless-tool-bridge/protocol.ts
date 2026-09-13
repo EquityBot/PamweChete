@@ -56,6 +56,41 @@ const SCHEMA_ANNOTATION_KEYS = new Set([
 	"writeOnly",
 ]);
 
+// Keywords whose value maps names to schemas. Those names are data: a property
+// called "title" or "description" is a field of the tool's input, not an
+// annotation, and deleting it left the schema requiring a property it no longer
+// permitted.
+const SCHEMA_MAP_KEYS = new Set([
+	"properties",
+	"patternProperties",
+	"dependentSchemas",
+	"$defs",
+	"definitions",
+]);
+
+// Keywords whose value is a schema, or an array of schemas.
+const SCHEMA_VALUE_KEYS = new Set([
+	"items",
+	"prefixItems",
+	"additionalItems",
+	"additionalProperties",
+	"unevaluatedItems",
+	"unevaluatedProperties",
+	"contains",
+	"propertyNames",
+	"not",
+	"if",
+	"then",
+	"else",
+	"allOf",
+	"anyOf",
+	"oneOf",
+]);
+
+// Annotations live in schema positions only, so every other keyword is copied
+// through untouched. That keeps literal instance values whole: recursing into
+// "const" or "enum" used to turn {title: "Required literal", count: 1} into
+// {count: 1}, which is a different literal.
 export function compactToolSchema(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(compactToolSchema);
 	if (!isPlainObject(value)) return value;
@@ -63,7 +98,19 @@ export function compactToolSchema(value: unknown): unknown {
 	const compact: Record<string, unknown> = {};
 	for (const [key, child] of Object.entries(value)) {
 		if (SCHEMA_ANNOTATION_KEYS.has(key)) continue;
-		compact[key] = compactToolSchema(child);
+		if (SCHEMA_MAP_KEYS.has(key) && isPlainObject(child)) {
+			const members: Record<string, unknown> = {};
+			for (const [name, member] of Object.entries(child)) {
+				members[name] = compactToolSchema(member);
+			}
+			compact[key] = members;
+			continue;
+		}
+		if (SCHEMA_VALUE_KEYS.has(key)) {
+			compact[key] = compactToolSchema(child);
+			continue;
+		}
+		compact[key] = child;
 	}
 	return compact;
 }

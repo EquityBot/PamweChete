@@ -29,7 +29,7 @@ All scripts are in `SKILL_DIR/scripts/`.
 |---|---|---|
 | `pdf_info.py <path>` | Metadata + per-page analysis (page count, TOC, text density, maths density, image count) | - |
 | `pdf_extract.py <path> [--pages SPEC]` | Extract text by page | `--pages all\|1-5\|1,3,7\|3` |
-| `pdf_render.py <path> [--pages SPEC] [--dpi N]` | Render pages to PNG images in `/tmp/pi-pdf-*/` | `--pages`, `--dpi` (default 150) |
+| `pdf_render.py <path> [--pages SPEC] [--dpi N]` | Render pages to PNG images in a fresh `render-*` directory inside the private `pi-pdf-reader` cache (`%LOCALAPPDATA%` on Windows, `$XDG_CACHE_HOME` or `~/.cache` elsewhere). Use the paths the script prints. | `--pages`, `--dpi` (default 150) |
 | `pdf_search.py <path> <query> [--context N] [--literal]` | Search text content by regex or literal | `--context` lines (default 3), `--literal` flag |
 
 Page specs: `all`, `1-5`, `1,3,7`, `3` (1-indexed, inclusive ranges).
