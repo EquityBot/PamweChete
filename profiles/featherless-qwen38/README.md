@@ -9,7 +9,7 @@ This profile configures Pi for `DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-
 - Baseline sampling: temperature `0`, repetition penalty `1.15`
 - Cost metadata, from the Featherless model page on 2026-09-07: `$1.60` input, `$0.15` cached, `$12.00` output per million tokens. Featherless prices differ per model and change over time, so re-read the model page when switching models rather than carrying the previous figures over.
 - Thinking: off at the Pi level only. `chat_template_kwargs` is deliberately unset, because setting `enable_thinking: false` stops this model emitting native tool calls: it prints a `<tool_call>` envelope as ordinary text and invents tool names. The verifier fails the profile if that key comes back.
-- Reliability: two provider-request retries with server-directed delays capped at 30 seconds, plus three state-preserving agent retries after 5, 10 and 20 seconds
+- Reliability: 2 provider-request retries with server-directed delays capped at 30 seconds, plus 3 state-preserving agent retries after 5, 10 and 20 seconds
 - Extensions: ask-user-question, bash-guard, pinned RTK output compression, the bounded Featherless text-tool bridge, custom header and prompt snippets
 - Network, browser, memory and subagent extensions: not loaded by default
 
@@ -21,13 +21,13 @@ The 2026-08-28 live benchmark on Pi 0.84.3 selected the expanded surface:
 `read`, `grep`, `find`, `ls`, `bash`, `edit`, `write` and
 `ask_user_question`. It passed project description, seeded repair and
 multi-step create-and-verify fixtures with 10 tool calls, zero invalid calls
-and zero repeated calls. The lean surface passed the first two fixtures but
+and zero repeated calls. The lean surface passed the first 2 fixtures but
 did not complete the multi-step fixture in the selection run.
 
 The second optimisation benchmark kept full bridge schemas. With pinned RTK
-enabled, full schemas again passed all three fixtures with 10 valid calls,
+enabled, full schemas again passed all 3 fixtures with 10 valid calls,
 zero invalid calls, zero repeats and 223 output tokens. The compact-schema
-candidate passed the first two fixtures but failed the multi-step fixture after
+candidate passed the first 2 fixtures but failed the multi-step fixture after
 one read, then emitted 4,108 output tokens of malformed wrapper repetition. It
 is therefore diagnostic-only; the unset/default bridge mode remains `full`.
 
@@ -36,7 +36,7 @@ In a separate controlled repository containing 81 modified tracked files and
 and verbose `git diff` output by 44.76% while retaining the required changed
 file, untracked-directory and diff facts.
 
-A repeated live smoke pass later observed Featherless return transient capacity errors after partial tool progress. Pi's request retry implementation safely retries 429 and 5xx responses before a stream begins, while its agent retry path retains completed tool results and continues from the same state. The final profile therefore enables two provider retries, caps a server-requested delay at 30 seconds, and gives a longer 35-second agent backoff window.
+A repeated live smoke pass later observed Featherless return transient capacity errors after partial tool progress. Pi's request retry implementation safely retries 429 and 5xx responses before a stream begins, while its agent retry path retains completed tool results and continues from the same state. The final profile therefore enables 2 provider retries, caps a server-requested delay at 30 seconds, and gives a longer 35-second agent backoff window.
 
 ## Model change, 2026-09-07
 

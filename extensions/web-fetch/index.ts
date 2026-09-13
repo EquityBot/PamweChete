@@ -367,7 +367,7 @@ function isPrivateIPv4(address: string): boolean {
 	);
 }
 
-// Expands an IPv6 literal into its eight numeric hextets, resolving "::" compression, a trailing
+// Expands an IPv6 literal into its 8 numeric hextets, resolving "::" compression, a trailing
 // dotted quad (::ffff:127.0.0.1) and any zone index. Ranges are membership tests over these
 // numbers: a string prefix cannot express fe80::/10, and it misses every equivalent spelling of
 // the same address. Returns null when the literal is not one this parser can read.
@@ -403,7 +403,7 @@ function ipv6Hextets(address: string): number[] | null {
 }
 
 // One address literal, classified: ::1 loopback, :: unspecified, fe80::/10 link-local (first
-// hextet fe80–febf), fc00::/7 unique-local (fc00–fdff), plus the IPv4 ranges above. :: is the IPv6
+// hextet fe80 to febf), fc00::/7 unique-local (fc00 to fdff), plus the IPv4 ranges above. :: is the IPv6
 // spelling of 0.0.0.0 and lands on loopback the same way. An IPv4-mapped literal carries an IPv4
 // address in its low 32 bits, so ::ffff:127.0.0.1 and its hex spelling ::ffff:7f00:1 are
 // classified as the IPv4 they carry rather than as IPv6.
@@ -438,7 +438,7 @@ function isPrivateAddress(address: string): boolean {
 // is resolved before it is cleared, because a name says nothing about where it points: split-horizon
 // DNS makes an ordinary-looking payroll.corp.internal answer with an RFC1918 address, and the
 // unreadable HTML an internal app returns is exactly what sends this URL to the fallback. A name
-// that does not resolve at all is internal too — a host we could not reach ourselves must not be
+// that does not resolve at all is internal too - a host we could not reach ourselves must not be
 // handed to someone who can.
 async function isPrivateHost(url: string): Promise<boolean> {
 	let hostname: string;

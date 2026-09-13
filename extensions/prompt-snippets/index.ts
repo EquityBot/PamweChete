@@ -1,5 +1,5 @@
 /**
- * Prompt Snippets — mix-and-match single-purpose prompt rules.
+ * Prompt Snippets - mix-and-match single-purpose prompt rules.
  *
  * Each snippet is a markdown file with frontmatter (name, description,
  * placement, order) stored in the `snippets/` directory next to this file.
@@ -22,7 +22,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 interface Snippet {
-	/** Filename, e.g. "concise.md" */
+	/** Filename, for example, "concise.md" */
 	id: string;
 	name: string;
 	description: string;

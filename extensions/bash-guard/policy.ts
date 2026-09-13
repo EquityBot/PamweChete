@@ -560,7 +560,7 @@ export function analyzeBashCommand(command, options = {}) {
 		reasons.push(...segmentRisk.reasons);
 	}
 
-	// Same second net the headless and disabled-mode floors apply, so the interactive analyzer is
+	// Same second net the headless and disabled-mode floors apply, so the interactive analyser is
 	// never weaker than the floor that runs when there is nobody to prompt.
 	const catastrophicReason = findBlockedReason(command, CATASTROPHIC_BLOCKED);
 	if (catastrophicReason) {

@@ -74,13 +74,13 @@ Avoid cloning this repo directly into `~/.pi/agent` unless it is a fresh setup. 
 
 ### Extensions
 
-- `ask-user-question.ts`: the agent asks you a question through a UI popup; popups from different extensions serialize via a shared UI lock
+- `ask-user-question.ts`: the agent asks you a question through a UI popup; popups from different extensions serialise via a shared UI lock
 - `bash-guard/`: hooks that catch dangerous bash commands before they run, with an on/off toggle
 - `browser/`: Playwright-driven headless Chromium the agent can drive (navigate, eval JS, inspect network/console, click, screenshot); off by default, enable with `/browser on`
 - `custom-header.ts`: the big capital Π header
 - `featherless-tool-bridge/`: validates and translates text tool envelopes from the older Featherless model
 - `rtk/`: asks RTK to compress supported Bash command output after bash-guard checks the command
-- `prompt-snippets/`: small, reusable behavior rules toggled onto a message before sending; reset after send
+- `prompt-snippets/`: small, reusable behaviour rules toggled onto a message before sending; reset after send
 - `web-fetch/`: fetch a URL and get clean markdown
 - `web-search/`: web search
 
@@ -93,7 +93,7 @@ Avoid cloning this repo directly into `~/.pi/agent` unless it is a fresh setup. 
 
 ### Deprecated
 
-`deprecated/` held the extensions and skills from the two-month setup that were no longer in active use. They still worked; they just didn't earn their place. Removed on 7 September 2026; the tree at 0dceaf5 is the last one that holds them.
+`deprecated/` held the extensions and skills from the 2-month setup that were no longer in active use. They still worked; they just didn't earn their place. Removed on 7 September 2026; the tree at 0dceaf5 is the last one that holds them.
 
 ## Dependencies
 

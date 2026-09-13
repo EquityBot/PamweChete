@@ -1,9 +1,9 @@
-// RTK Pi extension — rewrites bash commands to use rtk for token savings.
+// RTK Pi extension - rewrites bash commands to use rtk for token savings.
 // Requires: rtk >= 0.23.0 in PATH.
 //
 // This is a thin delegating extension: all rewrite logic lives in `rtk rewrite`,
 // which is the single source of truth (src/discover/registry.rs).
-// To add or change rewrite rules, edit the Rust registry — not this file.
+// To add or change rewrite rules, edit the Rust registry - not this file.
 //
 // Exit code contract for `rtk rewrite`:
 //   0 + stdout  Rewrite found → mutate command
@@ -21,8 +21,8 @@ const MIN_SUPPORTED_RTK_MINOR = 23
 
 // Local reimplementation of the package's `isToolCallEventType("bash", event)` type
 // guard. That helper is a value export, so importing it pulls in the whole
-// `@earendil-works/pi-coding-agent` barrel at extension load — profiled at ~250ms
-// warmed, vs ~10ms for a type-only import. `BashToolCallEvent`/`ToolCallEvent`
+// `@earendil-works/pi-coding-agent` barrel at extension load - profiled at ~250ms
+// warmed, versus ~10ms for a type-only import. `BashToolCallEvent`/`ToolCallEvent`
 // below are type-only imports and are erased at compile time, so they carry none
 // of that cost. See #2753.
 function isBashToolCallEvent(event: ToolCallEvent): event is BashToolCallEvent {

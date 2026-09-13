@@ -1,9 +1,9 @@
 ---
 name: analyze-sessions
-description: Analyze past pi agent sessions stored under ~/.pi/agent/sessions. Use when the user asks about cost (totals, per project, per model, per day), wants to mine prompting patterns from past prompts, view a specific past session, or search across session transcripts.
+description: Analyse past pi agent sessions stored under ~/.pi/agent/sessions. Use when the user asks about cost (totals, per project, per model, per day), wants to mine prompting patterns from past prompts, view a specific past session, or search across session transcripts.
 ---
 
-# Analyze Sessions
+# Analyse sessions
 
 Tools for querying past pi sessions. All scripts are stdlib Python 3, no dependencies, and read directly from `~/.pi/agent/sessions/`.
 
@@ -66,7 +66,7 @@ python3 prompts.py --cwd /path/to/your/project --since 30d
 python3 prompts.py --grep "rate limit" --since 60d
 ```
 
-The typical workflow for "find patterns I could turn into global instructions":
+The typical workflow for 'find patterns I could turn into global instructions':
 1. Run `prompts.py --since 30d` and read the output.
 2. Group by recurring themes (same correction repeated across projects, same setup question, same complaint).
 3. Propose additions to global `CLAUDE.md` / project AGENTS.md / pi instructions.
@@ -114,7 +114,7 @@ Each hit prints the session header plus a `python3 show_session.py --session <id
 
 ## Shared filters
 
-Available on **all four scripts**:
+Available on **all 4 scripts**:
 
 | Flag | Meaning |
 |---|---|
@@ -132,7 +132,7 @@ Available on **all four scripts**:
 
 ### Subagent defaults
 - `cost.py`: **included** (totals = real spend)
-- `prompts.py`, `show_session.py`, `search.py`: **excluded** (a subagent's "user" message is a task description written by another agent, not your prompt)
+- `prompts.py`, `show_session.py`, `search.py`: **excluded** (a subagent's 'user' message is a task description written by another agent, not your prompt)
 
 ## Common queries
 
@@ -152,4 +152,4 @@ Available on **all four scripts**:
 
 - All paths are read-only; the scripts never modify session files.
 - The library (`scripts/sessions.py`) is reusable: import it for ad-hoc analysis.
-- A full scan over a few hundred sessions takes ~1–2 seconds. No caching.
+- A full scan over a few hundred sessions takes about 1 to 2 seconds. No caching.

@@ -7,13 +7,13 @@ OpenAI `tool_calls` objects.
 
 The bridge converts a response only when all of these conditions hold:
 
-- the provider and model match exactly;
-- the response completed normally and contains one text block;
+- the provider and model match exactly
+- the response completed normally and contains one text block
 - one bounded response form contains one JSON object with exactly `tool` and
   `args`: bare JSON, the suffix after `</think>`, one matched `<tool_call>`
   wrapper, or one or more brace-free prose paragraphs followed by one JSON
   paragraph;
-- `tool` is currently active in Pi;
+- `tool` is currently active in Pi
 - `args` is an object without prototype-polluting keys.
 
 Pi still performs its normal tool-schema validation and all configured
@@ -21,8 +21,8 @@ Pi still performs its normal tool-schema validation and all configured
 malformed arguments, extra envelope fields, and prose that does not end in one
 accepted envelope remain ordinary text and are never executed.
 
-One additional learned model form is accepted only for `bash`: a single exact
-`<tool_call><bash><parameter=command>…` structure with its three required
+One additional learnt model form is accepted only for `bash`: a single exact
+`<tool_call><bash><parameter=command>…` structure with its 3 required
 closing tags. It cannot name another tool or add another parameter, and the
 resulting command still passes through bash-guard.
 
@@ -49,7 +49,7 @@ opening tag are not accepted.
 
 For this exact provider/model, the extension removes OpenAI-native `tools`,
 `tool_choice` and `parallel_tool_calls` fields from the outgoing payload. The
-active schemas are supplied in the compatibility prompt instead, avoiding two
+active schemas are supplied in the compatibility prompt instead, avoiding 2
 conflicting tool protocols. Bridged calls and results are also rendered as
 plain JSON in provider-facing history; Pi's internal session remains typed.
 If the endpoint leaks a generated reasoning prefix despite thinking being

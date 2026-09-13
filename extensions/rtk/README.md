@@ -9,7 +9,7 @@ This directory maintains a local adaptation of the thin Pi hook from [rtk-ai/rtk
 - Source path: `hooks/pi/rtk.ts`
 - Release commit: `8dae5a750fe307d1fee105a2ff4a9d1ca54ac791`
 - Release source SHA-256: `d278508809a5379e506384eabb19e17a672806c4eac7eabc1cd634699aea8c33`
-- Local source SHA-256 (LF): `48f07e4fd8e38b350cae84fe0116d2bc29932d535e333a307cb9e477f5272de6`
+- Local source SHA-256 (LF): `2280aa9c32900362a13adf314f0b9253a2b463bd9b5b2d5b20833ac4a5d31c76`
 - Licence: Apache-2.0; the upstream licence is included as `LICENSE`.
 
 `index.ts` replaces the release source's runtime type-guard import with a local guard and type-only imports. It is maintained in this repository; its LF-normalised digest and observable behaviour are checked locally. Rewrite rules stay in RTK itself rather than being copied into this configuration.

@@ -1,4 +1,4 @@
-"""Shared library for analyzing pi agent session logs.
+"""Shared library for analysing pi agent session logs.
 
 A session is a JSONL file under ~/.pi/agent/sessions/<encoded-cwd>--/, with
 optional nested subagent transcripts under
@@ -56,7 +56,7 @@ def parse_date(value: str) -> datetime:
         }[unit]
         return datetime.now(timezone.utc) - delta
 
-    # Normalize ' ' -> 'T' for ISO parsing
+    # Normalise ' ' -> 'T' for ISO parsing
     normalized = value.replace(" ", "T")
     if "T" not in normalized:
         normalized = normalized + "T00:00:00"
@@ -80,7 +80,7 @@ def ts_from_iso(s: str) -> datetime:
 
 
 # ---------------------------------------------------------------------------
-# Path discovery & session shape
+# Path discovery and session shape
 # ---------------------------------------------------------------------------
 
 
@@ -235,7 +235,7 @@ def summarize_session(path: Path) -> Optional[SessionSummary]:
                         s.error_count += 1
 
     if not s.id:
-        # No session header — bail.
+        # No session header - bail.
         return None
     s.user_prompt_concat = "\n".join(user_chunks)
     return s
@@ -395,7 +395,7 @@ def filters_from_args(args: argparse.Namespace, *, subagents_default: bool) -> F
 
 
 def load_summaries(filters: Filters) -> list:
-    """Discover, summarize, and filter sessions. Sorted newest first."""
+    """Discover, summarise, and filter sessions. Sorted newest first."""
     out: list = []
     for path in iter_session_files(include_subagents=bool(filters.include_subagents)):
         s = summarize_session(path)

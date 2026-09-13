@@ -1,7 +1,7 @@
 /**
  * Custom Header Extension
  *
- * Replaces the built-in startup header with an identical copy you can customize.
+ * Replaces the built-in startup header with an identical copy you can customise.
  * Edit the `buildHeader()` function below to change what's shown at startup.
  *
  * Usage: Just edit this file and run /reload in pi.
@@ -13,13 +13,13 @@ import { VERSION, keyHint, rawKeyHint } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
 /**
- * Build the header text. This is what you customize.
+ * Build the header text. This is what you customise.
  *
  * Currently renders the logo (app name + version) only; the keybinding
  * hints are built below but held behind a commented-out return, so swap
- * the two return lines to show them.
+ * the 2 return lines to show them.
  *
- * To customize, just edit the `logo` or `hints` array below.
+ * To customise, just edit the `logo` or `hints` array below.
  */
 function buildHeader(theme: Theme): string {
 	// ── Logo ──────────────────────────────────────────────

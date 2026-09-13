@@ -1,6 +1,6 @@
 ---
 name: web-debug
-description: "Debug or verify frontend behavior by driving a live page (DOM, storage, network, console) with the browser_* tools instead of reading source or asking the user to paste from devtools. Use when the user reports: broken login or auth flow, failed/401/403/CORS requests, JWT or session weirdness, form not submitting, button does nothing, blank screen, hydration mismatch, stale data, 'works locally / fails in prod', or asks you to verify a frontend change end-to-end."
+description: "Debug or verify frontend behaviour by driving a live page (DOM, storage, network, console) with the browser_* tools instead of reading source or asking the user to paste from devtools. Use when the user reports: broken login or auth flow, failed/401/403/CORS requests, JWT or session weirdness, form not submitting, button does nothing, blank screen, hydration mismatch, stale data, 'works locally / fails in prod', or asks you to verify a frontend change end-to-end."
 ---
 
 # Web debugging via the live page
@@ -17,18 +17,18 @@ sounds like *anything* in this list, open the browser first, theorize second.
 
 | User says something like… | First move |
 |---|---|
-| "I can't log in" / "login is broken" / "auth doesn't work" | [Auth flow](#auth-flow-not-working) |
+| 'I can't log in' / 'login is broken' / 'auth doesn't work' | [Auth flow](#auth-flow-not-working) |
 | "I'm getting a 401 / 403 / CORS error from `/api/foo`" | [Bad request](#why-is-this-request-failing) |
-| "The session isn't persisting" / "logged out on refresh" | [Storage inspection](#whats-actually-in-storage) |
-| "This JWT looks weird" / "wrong claims" | [JWT decode](#decode-a-jwt-without-leaving-the-loop) |
-| "The form does nothing" / "submit button doesn't work" | [Form not submitting](#form-not-submitting) |
-| "Blank screen" / "page won't load" / "stuck loading" | [Blank screen](#blank-screen) |
-| "Works on my machine" / "fails in prod" | [Reproduce in prod](#reproduce-in-prod) |
-| "Can you verify this fix?" / "does my change work?" | [Verify a change](#verify-a-frontend-change-end-to-end) |
+| 'The session isn't persisting' / 'logged out on refresh' | [Storage inspection](#whats-actually-in-storage) |
+| 'This JWT looks weird' / 'wrong claims' | [JWT decode](#decode-a-jwt-without-leaving-the-loop) |
+| 'The form does nothing' / 'submit button doesn't work' | [Form not submitting](#form-not-submitting) |
+| 'Blank screen' / 'page won't load' / 'stuck loading' | [Blank screen](#blank-screen) |
+| 'Works on my machine' / 'fails in prod' | [Reproduce in prod](#reproduce-in-prod) |
+| 'Can you verify this fix?' / 'does my change work?' | [Verify a change](#verify-a-frontend-change-end-to-end) |
 
-If none of those match but the bug is *behavioral* (something the user sees in
-the browser), still open `browser_goto` first. You will learn more in three
-tool calls than three rounds of source-reading.
+If none of those match but the bug is *behavioural* (something the user sees in
+the browser), still open `browser_goto` first. You will learn more in 3
+tool calls than 3 rounds of source-reading.
 
 ## Core loop
 
@@ -73,13 +73,13 @@ browser_network   urlFilter=<route>   verbose=true
 ```
 
 `verbose=true` shows the curated headers (`Authorization`, `apikey`,
-`content-type`, etc.). For CORS, add `includeHeaders=["origin","access-control-request-method","access-control-request-headers"]`.
+`content-type` and so on). For CORS, add `includeHeaders=["origin","access-control-request-method","access-control-request-headers"]`.
 
 Common patterns the headers reveal:
 - Missing or stale `Authorization` → check the auth flow above.
 - `apikey` header missing on a Supabase call → the client wasn't constructed
   with the anon key.
-- Wrong `content-type` → the client serialized the body unexpectedly.
+- Wrong `content-type` → the client serialised the body unexpectedly.
 - 403 with `prefer: return=representation` → RLS, not auth.
 
 ### What's actually in storage
@@ -108,7 +108,7 @@ browser_eval expression=`(() => {
 })()`
 ```
 
-Useful when the user reports "I'm logged in but the API thinks I'm anon",
+Useful when the user reports 'I'm logged in but the API thinks I'm anon',
 inspect `role`, `aud`, `exp` directly.
 
 ### Form not submitting
@@ -157,7 +157,7 @@ against the same action in dev.
 ### Verify a frontend change end-to-end
 
 This is the underused half of the kit. After making a code change that
-affects behavior the user can see:
+affects behaviour the user can see:
 
 ```
 browser_goto      url=<changed page>            # fresh load
@@ -167,9 +167,9 @@ browser_eval      expression=<assertion about resulting state>
 browser_screenshot                              # if there's a visual claim
 ```
 
-Don't say "done" if you haven't exercised the change. Reading source and
-saying "this should work" is a strictly weaker claim than
-"I drove it and observed the expected state."
+Don't say 'done' if you haven't exercised the change. Reading source and
+saying 'this should work' is a strictly weaker claim than
+'I drove it and observed the expected state.'
 
 ## Pitfalls
 
@@ -178,7 +178,7 @@ These are the ones that have already bitten; internalize them.
 - **`fetch()` without consuming the body** shows up as `ERR net::ERR_ABORTED`
   in `browser_network`, even when the JS side saw a 200. If you do quick
   checks, do `const r = await fetch(url); await r.text(); return r.status`.
-- **DOM nodes don't JSON-serialize.** Return primitive properties:
+- **DOM nodes don't JSON-serialise.** Return primitive properties:
   `.outerHTML`, `.textContent`, `.value`, `.checked`. Never return the node
   itself or `document.body`.
 - **`button[type=submit]` is an HTML attribute selector**, not a DOM property
@@ -196,6 +196,6 @@ These are the ones that have already bitten; internalize them.
   faster (no browser launch, no profile state).
 - If the question is purely about source code, read the source. The browser
   doesn't tell you why a function was written, only what it does at runtime.
-- If you need to verify behavior across many URLs at scale, write a script
+- If you need to verify behaviour across many URLs at scale, write a script
   and run it with `bash`; the browser kit is for interactive debugging, not
   batch crawling.

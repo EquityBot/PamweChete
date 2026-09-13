@@ -540,7 +540,7 @@ async function askMultiChoice(
 
 // Shared UI mutex. ctx.ui.custom()/editor can only handle one active call at
 // a time, so ALL pop-up-style tools (ask_user_question, quiz, ...) must
-// serialize against each other, not just against themselves. We stash one
+// serialise against each other, not just against themselves. We stash one
 // mutex on globalThis so separate extension files can share it without
 // importing each other.
 const SHARED_UI_LOCK_KEY = "__piSharedUiLock";

@@ -51,15 +51,15 @@ background browser is left running.
 | Tool | Purpose |
 |---|---|
 | `browser_goto`       | Navigate to a URL. Returns `{ status, finalUrl }`. |
-| `browser_eval`       | Run JS in the page. Expression, function source, or already-called IIFE, all three work. Return value must be JSON-serializable. |
-| `browser_console`    | Drain buffered console + pageerror entries (filterable, bounded to 1000). |
+| `browser_eval`       | Run JS in the page. Expression, function source, or already-called IIFE, all 3 work. Return value must be JSON-serialisable. |
+| `browser_console`    | Drain buffered console + pageerror entries (filterable, bounded to 1,000). |
 | `browser_network`    | Drain buffered network requests. Default output is terse (`status method url`); pass `verbose: true` and/or `includeHeaders: [...]` to inline curated request/response headers on each row. |
 | `browser_fill`       | Type a value into an input matched by selector. |
 | `browser_click`      | Click an element (CSS, `text=...`, `role=...`). |
 | `browser_screenshot` | Save a PNG to a tempdir and return its path; pi can `read` it to view. |
 | `browser_close`      | Kill the persistent context. |
 
-All page-touching tools serialize through a single internal queue, so it's
+All page-touching tools serialise through a single internal queue, so it's
 safe to fire several `browser_*` calls in one batch; they run in submission
 order against the shared Page rather than racing each other.
 
@@ -87,7 +87,7 @@ for status; `close` and `kill` are aliases for `off`).
 ## Network output: terse by default, headers on opt-in
 
 `browser_network` keeps the default text payload minimal, one line per
-request, `status method url`, because a single SPA page load fires 30–100
+request, `status method url`, because a single SPA page load fires 30 to 100
 subresource requests and inlining headers on all of them would drown the
 agent's context window in noise.
 
@@ -126,16 +126,16 @@ to peek without draining.
   you'd expect. Note: top-level `return` and multi-statement bodies aren't
   valid expressions; wrap them in `(() => { ... })()`.
 - For DOM nodes, return primitive properties (`.outerHTML`, `.textContent`,
-  `.value`) rather than the node itself; Playwright serializes nodes as the
+  `.value`) rather than the node itself; Playwright serialises nodes as the
   opaque sentinel `"ref: <Node>"`.
-- `browser_eval` returns `undefined` as `null` after JSON serialization. Wrap
+- `browser_eval` returns `undefined` as `null` after JSON serialisation. Wrap
   expressions in a function that returns a sentinel if you care.
 - `browser_click`: CSS attribute selectors match HTML attributes, not DOM
   properties. `button[type=submit]` will NOT match `<button>Submit</button>`
   even though that button's `.type === "submit"` by default. Prefer
   `text=Submit` or `role=button[name=Submit]` for semantic matching.
 - `browser_network` shows `ERR net::ERR_ABORTED` for fetches whose body was
-  never consumed (e.g. `await fetch(url)` without `.text()` / `.json()`).
+  never consumed (for example, `await fetch(url)` without `.text()` / `.json()`).
   Chromium cancels the body stream and Playwright reports `requestfailed`
   even though the JS side saw a successful response. Consume the body if you
   want a clean status row.
@@ -147,10 +147,10 @@ to peek without draining.
 
 ## Possible next features
 
-- `browser_wait_for(selector|url)` for explicit synchronization.
+- `browser_wait_for(selector|url)` for explicit synchronisation.
 - `browser_request_body` to expose request/response bodies on demand without
   ballooning the default network buffer.
 - Mail-fetch tool (Gmail API or Mailpit) so OTP logins can be fully automated.
 - `fly_logs` companion tool, `flyctl logs -a <app>` tailed into a similar
-  ring buffer, so the agent can correlate frontend behavior with backend
+  ring buffer, so the agent can correlate frontend behaviour with backend
   errors without context switching.

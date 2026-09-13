@@ -1,10 +1,10 @@
 /**
- * Browser extension — Playwright-driven headless Chromium pi can drive.
+ * Browser extension - Playwright-driven headless Chromium pi can drive.
  *
  * Exposes a small set of tools the LLM can call to debug a live web app:
  *   - browser_goto         navigate
  *   - browser_eval         run JS in the page (read localStorage, decode JWTs,
- *                          inspect the DOM, etc.)
+ *                          inspect the DOM and so on)
  *   - browser_console      drain buffered console + pageerror entries
  *   - browser_network      drain buffered network requests (status, headers)
  *   - browser_fill         fill an input
@@ -105,10 +105,10 @@ function filterHeaders(
 }
 
 /**
- * Serialize all tool executions against the single shared Page.
+ * Serialise all tool executions against the single shared Page.
  *
  * Playwright's Page is not concurrent-safe: if pi fires multiple browser_*
- * tools in one block (which it does by default for independent calls), two
+ * tools in one block (which it does by default for independent calls), 2
  * `fill`s will race into the same field, and a `goto` followed by an `eval`
  * in the same batch will hit "Execution context was destroyed" because the
  * eval lands during the navigation teardown.
@@ -236,8 +236,8 @@ export default function browserExtension(pi: ExtensionAPI) {
     pi.appendEntry(ENABLED_ENTRY_TYPE, { on: false });
   }
 
-  // Initialize the gate on session_start. We can't call setActiveTools
-  // during the factory — the extension runtime isn't initialized yet and
+  // Initialise the gate on session_start. We can't call setActiveTools
+  // during the factory - the extension runtime isn't initialised yet and
   // pi throws "Action methods cannot be called during extension loading".
   // session_start fires after the runtime is up and after the registerTool
   // calls below have settled, so it's the first safe point to flip the
@@ -329,7 +329,7 @@ export default function browserExtension(pi: ExtensionAPI) {
         // IIFEs like `(() => 42)()` into `((() => 42)())()` → `42()` → TypeError.
         //
         // Evaluate the source once in the page,
-        // and if the result is a function, call it. This handles all three
+        // and if the result is a function, call it. This handles all 3
         // forms (plain expr, function value, IIFE) without ambiguity.
         const src = params.expression;
         const wrapped = `(() => { const __v = (${src}); return typeof __v === 'function' ? __v() : __v; })()`;
@@ -343,7 +343,7 @@ export default function browserExtension(pi: ExtensionAPI) {
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           // Keep the success/error result shape identical so the tool's
-          // inferred return type stays a single union member — the error
+          // inferred return type stays a single union member - the error
           // text already lives in `content[].text`, no need to duplicate it
           // into details.
           return {
@@ -580,7 +580,7 @@ export default function browserExtension(pi: ExtensionAPI) {
         );
         return;
       }
-      // Bare /browser — status.
+      // Bare /browser - status.
       const toolState = enabled ? "enabled" : "disabled (run /browser on)";
       const procState =
         page && !page.isClosed() ? `, open at ${page.url()}` : "";

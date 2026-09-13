@@ -1,9 +1,9 @@
 ---
 name: youtube-transcript
-description: Fetch the transcript and title of a YouTube video as JSON. Use when the user provides a YouTube URL and you need the spoken content (captions) for analysis, summarization, quoting, or search.
+description: Fetch the transcript and title of a YouTube video as JSON. Use when the user provides a YouTube URL and you need the spoken content (captions) for analysis, summarisation, quoting, or search.
 ---
 
-# YouTube Transcript
+# YouTube transcript
 
 Fetches a YouTube video's title and full transcript by pulling captions via `yt-dlp`. Prefers manual English subtitles, falls back to auto-generated English.
 

@@ -16,7 +16,7 @@ def analyze(path: str) -> dict:
         text_len = len(text)
         images = page.get_images(full=True)
 
-        # Estimate math density: ratio of unicode math-range chars to total chars
+        # Estimate maths density: ratio of unicode maths-range chars to total chars
         math_chars = sum(
             1 for c in text
             if ('\u2200' <= c <= '\u22FF')    # Mathematical Operators
