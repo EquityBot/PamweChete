@@ -101,7 +101,7 @@ When you actually want headers (the auth-debugging use case), opt in:
   content-profile, prefer, location, www-authenticate, retry-after
   ```
 
-- `includeHeaders: ["cookie", "cache-control", ...]`: extend the curated set
+- `includeHeaders: ["cache-control", "vary", ...]`: extend the curated set
   for this call only (case-insensitive). Implies `verbose: true`.
 
 Every header Playwright reports is captured into the ring buffer regardless;
@@ -110,9 +110,8 @@ Best paired with `urlFilter` / `status` so headers only appear on the rows you
 actually care about.
 
 The capture uses Playwright's `request.headers()` and `response.headers()`,
-which omit security-related headers, cookie headers among them. So
-`includeHeaders: ["cookie"]` renders a cookie header only when one reached the
-buffer, and inspecting cookies this way does not work. Playwright offers
+which omit security-related headers, including cookies. `includeHeaders` cannot
+recover headers absent from the capture buffer. Playwright offers
 `allHeaders()` for the complete set; this extension does not call it.
 
 Clear-on-read drains the **entire** buffer by default, not just the rows
