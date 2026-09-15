@@ -468,8 +468,14 @@ async function extractWithJinaReader(
 	signal?: AbortSignal,
 ): Promise<FetchResult | null> {
 	try {
-		const res = await fetch(JINA_READER_BASE + url, {
-			headers: { Accept: "text/markdown", "X-No-Cache": "true" },
+		const hasFragment = Boolean(new URL(url).hash);
+		const res = await fetch(hasFragment ? JINA_READER_BASE : JINA_READER_BASE + url, {
+			...(hasFragment ? { method: "POST", body: JSON.stringify({ url }) } : {}),
+			headers: {
+				Accept: "text/markdown",
+				"X-No-Cache": "true",
+				...(hasFragment ? { "Content-Type": "application/json" } : {}),
+			},
 			signal: AbortSignal.any([
 				AbortSignal.timeout(JINA_TIMEOUT_MS),
 				...(signal ? [signal] : []),

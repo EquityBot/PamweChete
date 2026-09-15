@@ -93,3 +93,35 @@ test("browser_eval renders undefined and null as distinct text", async () => {
 		assert.equal(out.content[0].text, expected);
 	}
 });
+
+
+test("Jina preserves fragment routes and keeps ordinary GET requests", async () => {
+    const calls = [];
+    const module = await load("../extensions/web-fetch/index.ts", "extractWithJinaReader,isPrivateHost", {
+        fetch: async (url, options) => {
+            calls.push({ url, options });
+            return new Response("Markdown Content:\n# Synthetic\n" + "Synthetic content. ".repeat(20));
+        },
+    });
+    const target = "https://example.com/#/invoices?period=2026";
+    const result = await module.extractWithJinaReader(target);
+    assert.equal(result.url, target);
+    assert.equal(calls[0].url, "https://r.jina.ai/");
+    assert.equal(calls[0].options.method, "POST");
+    assert.deepEqual(JSON.parse(calls[0].options.body), { url: target });
+    assert.equal(calls[0].options.headers["Content-Type"], "application/json");
+    await module.extractWithJinaReader("https://example.com/invoices");
+    assert.equal(calls[1].url, "https://r.jina.ai/https://example.com/invoices");
+    assert.equal(calls[1].options.method, undefined);
+    assert.ok(calls[0].options.signal);
+    for (const privateUrl of ["http://127.0.0.1/#/payroll", "http://[::1]/#/payroll", "http://10.0.0.1/#/payroll"]) {
+        assert.equal(await module.isPrivateHost(privateUrl), true);
+    }
+});
+
+test("Jina fragment responses retain the body-size limit", async () => {
+    const module = await load("../extensions/web-fetch/index.ts", "extractWithJinaReader", {
+        fetch: async () => new Response("x".repeat(6 * 1024 * 1024)),
+    });
+    assert.equal(await module.extractWithJinaReader("https://example.com/#/invoices"), null);
+});

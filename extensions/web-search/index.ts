@@ -213,7 +213,7 @@ export default function (pi: ExtensionAPI) {
 			const creds = loadCredentials();
 			if (!creds) {
 				throw new Error(
-					`Missing Google Custom Search credentials. Set GOOGLE_SEARCH_API_KEY and GOOGLE_CSE_ID, or create ${AUTH_PATH} from auth.example.json. Get credentials from https://developers.google.com/custom-search/v1/introduction`,
+					`Missing Google Custom Search credentials. Set GOOGLE_SEARCH_API_KEY and GOOGLE_CSE_ID, or create ${AUTH_PATH} from auth.example.json. Google Custom Search JSON API is closed to new customers and ends on 1 January 2027. Existing eligible customers can configure credentials using https://developers.google.com/custom-search/v1/overview`,
 				);
 			}
 

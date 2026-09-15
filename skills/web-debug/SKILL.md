@@ -59,10 +59,11 @@ browser_network   urlFilter=/auth     verbose=true       # what was POSTed, what
 browser_eval      expression=Object.keys(localStorage)   # did a session land?
 ```
 
-If the network call to `/auth/v1/token` returns 200 but no session shows up in
-localStorage, the bug is in the client SDK's storage adapter, not the server.
-If the network call returns 400/401, the bug is upstream; read the response
-status and the request body.
+A 200 response with no localStorage session does not identify a storage bug.
+Check whether the client enables session persistence or uses cookie-based server
+rendering. If localStorage persistence is expected, investigate the adapter and
+write timing. For 400/401 responses, use the error code and client configuration
+to distinguish invalid input, authentication and server failures.
 
 ### Why is this request failing
 
@@ -80,7 +81,8 @@ Common patterns the headers reveal:
 - `apikey` header missing on a Supabase call → the client wasn't constructed
   with the anon key.
 - Wrong `content-type` → the client serialised the body unexpectedly.
-- 403 with `prefer: return=representation` → RLS, not auth.
+- A 403 can indicate row-level security or another insufficient-privilege error.
+  Check the response error code and applicable grants before assigning a cause.
 
 ### What's actually in storage
 
@@ -92,9 +94,10 @@ browser_eval      expression=document.cookie.split(';').map(item=>item.split('='
 ```
 
 For Supabase specifically the session key is
-`sb-<projectref>-auth-token`. If it's missing after login, the SDK never wrote
-it (suspect storage adapter or a race). If it's present but stale, the SDK
-isn't reading it on init.
+`sb-<projectref>-auth-token` when localStorage persistence is configured.
+Its absence can be expected with persistence disabled or cookie-based server
+rendering. Otherwise, investigate the adapter and write timing. A stale value
+is a reason to check initialisation and refresh behaviour, not a diagnosis.
 
 ### Decode a JWT without leaving the loop
 
@@ -121,9 +124,11 @@ browser_console                                  # validation error? handler thr
 browser_network                                  # did anything fire at all?
 ```
 
-If `checkValidity()` is `false`, the form has an HTML validation constraint
-blocking submit (often a hidden `required` field). If nothing fires on click,
-there's no handler bound (hydration issue, or the button is outside the form).
+A false `checkValidity()` result identifies an invalid control. Check
+`novalidate`, the submitter's `formnovalidate` and the submission method before
+concluding that validation blocks submission. An inert click can result from a
+disabled button, an overlay, a cancelled event or a missing handler. Check the
+control state and event path before attributing it to hydration or form wiring.
 
 ### Blank screen
 
