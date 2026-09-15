@@ -52,7 +52,19 @@ def main() -> int:
         return 1
 
     target = summaries[0]  # newest first
-    if not args.latest and not args.session and len(summaries) > 1:
+    if args.session and len(summaries) > 1:
+        # A prefix that matches several sessions must not silently render the newest:
+        # the caller asked for one specific transcript.
+        exact = [s for s in summaries if s.id == args.session]
+        if exact:
+            target = exact[0]
+        else:
+            S.stderr(f"# Ambiguous --session {args.session}: it matches "
+                     f"{len(summaries)} sessions. Use a longer prefix or a full ID.")
+            for s in summaries:
+                S.stderr(f"#   {s.id}")
+            return 1
+    elif not args.latest and len(summaries) > 1:
         S.stderr(f"# {len(summaries)} sessions matched; rendering newest "
                  f"({target.short_id}). Use --session to pick another, or --latest "
                  f"to suppress this warning.")
@@ -184,14 +196,26 @@ def _render_assistant(m: dict, ts: str, args) -> None:
             print()
 
 
+def _truncate_with_count(text: str, max_chars: int) -> str:
+    """Cut text to max_chars including the marker, and report the real cut.
+
+    The marker carries the number of characters dropped, and the marker's own
+    length decides how many are dropped, so size it against the largest number
+    it could carry. That over-estimate can only keep less text, never more, so
+    the result never exceeds max_chars.
+    """
+    marker = "\n…[{} more chars elided]…"
+    kept = max(0, max_chars - len(marker.format(len(text))))
+    return text[:kept] + marker.format(len(text) - kept)
+
+
 def _render_tool_result(m: dict, ts: str, max_chars: int) -> None:
     name = m.get("toolName") or "?"
     is_err = m.get("isError")
     badge = " ❌ ERROR" if is_err else ""
     text = _join_text(m.get("content"))
     if max_chars and len(text) > max_chars:
-        text = S.truncate(text, max_chars,
-                          suffix=f"\n…[{len(text) - max_chars} more chars elided]…")
+        text = _truncate_with_count(text, max_chars)
     print(f"### ↳ {name}{badge}  ·  {ts}")
     print()
     if text:

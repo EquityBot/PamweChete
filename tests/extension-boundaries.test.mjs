@@ -114,9 +114,20 @@ test("Jina preserves fragment routes and keeps ordinary GET requests", async () 
     assert.equal(calls[1].url, "https://r.jina.ai/https://example.com/invoices");
     assert.equal(calls[1].options.method, undefined);
     assert.ok(calls[0].options.signal);
-    for (const privateUrl of ["http://127.0.0.1/#/payroll", "http://[::1]/#/payroll", "http://10.0.0.1/#/payroll"]) {
-        assert.equal(await module.isPrivateHost(privateUrl), true);
+    for (const privateUrl of [
+        "http://127.0.0.1/#/payroll",
+        "http://[::1]/#/payroll",
+        "http://10.0.0.1/#/payroll",
+        // Both IPv4-in-IPv6 spellings of loopback. ::a.b.c.d is the deprecated IPv4-compatible
+        // form and used to miss the mapped-address branch, so the URL reached r.jina.ai.
+        "http://[::ffff:127.0.0.1]/#/payroll",
+        "http://[::127.0.0.1]/#/payroll",
+        "http://[::ffff:10.0.0.1]/#/payroll",
+        "http://[::10.0.0.1]/#/payroll",
+    ]) {
+        assert.equal(await module.isPrivateHost(privateUrl), true, privateUrl);
     }
+    assert.equal(await module.isPrivateHost("http://[2001:db8::1]/#/payroll"), false);
 });
 
 test("Jina fragment responses retain the body-size limit", async () => {

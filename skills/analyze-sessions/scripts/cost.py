@@ -75,39 +75,62 @@ def main() -> int:
 
 
 def session_keys(s: S.SessionSummary, by: str):
-    """Return the group key(s) a session contributes to, and a per-key cost
-    override. For 'model' a session can split across multiple keys, and we
-    re-scan the file to credit per-message cost. For everything else it's a
-    single key with full session cost."""
+    """Return the group key(s) a session contributes to, with the cost, message
+    count and error count that belong to each key. For 'model' a session can
+    split across several keys, and we re-scan the file to credit each message
+    to the model that handled it. For everything else it's a single key with
+    the session's own totals."""
     if by == "day":
         k = (s.started_at.astimezone().strftime("%Y-%m-%d")
              if s.started_at else "unknown")
-        yield k, s.cost_total
+        yield k, s.cost_total, s.message_count, s.error_count
     elif by == "project":
-        yield (s.cwd or "?"), s.cost_total
+        yield (s.cwd or "?"), s.cost_total, s.message_count, s.error_count
     elif by == "session":
-        yield s.id, s.cost_total
+        yield s.id, s.cost_total, s.message_count, s.error_count
     elif by == "model":
-        # Walk assistant messages to credit each one's cost to its model.
-        per_model = defaultdict(float)
-        for rec in S.iter_records(s.path):
-            if rec.get("type") != "message":
-                continue
-            m = rec.get("message") or {}
-            if m.get("role") != "assistant":
-                continue
-            model = m.get("model") or "?"
-            cost = ((m.get("usage") or {}).get("cost") or {}).get("total") or 0
-            per_model[model] += float(cost)
-        if not per_model and s.models:
-            # Fall back to splitting evenly across the session's models.
-            share = s.cost_total / len(s.models)
-            for mdl in s.models:
-                per_model[mdl] = share
-        for k, v in per_model.items():
-            yield k, v
+        yield from _model_keys(s)
     else:
-        yield "all", s.cost_total
+        yield "all", s.cost_total, s.message_count, s.error_count
+
+
+def _model_keys(s: S.SessionSummary):
+    """Split one session across the models that handled it.
+
+    Cost comes from each assistant message's own usage. A message is credited
+    to the model of the nearest assistant message at or before it, because a
+    user prompt and its tool results belong to the turn they are part of.
+    Messages before the first assistant message wait for that model."""
+    cost = defaultdict(float)
+    messages = defaultdict(int)
+    errors = defaultdict(int)
+    current = None
+    pending = 0
+    for rec in S.iter_records(s.path):
+        if rec.get("type") != "message":
+            continue
+        m = rec.get("message") or {}
+        role = m.get("role")
+        if role == "assistant":
+            current = m.get("model") or "?"
+            cost[current] += float(((m.get("usage") or {}).get("cost") or {}).get("total") or 0)
+            messages[current] += pending
+            pending = 0
+        if current is None:
+            pending += 1
+            continue
+        messages[current] += 1
+        if role == "toolResult" and m.get("isError"):
+            errors[current] += 1
+
+    if not cost and s.models:
+        # No per-message usage to read. Only the cost needs a fallback: the walk above
+        # already counted messages and errors per model from the roles alone.
+        for model in s.models:
+            cost[model] = s.cost_total / len(s.models)
+
+    for model, model_cost in cost.items():
+        yield model, model_cost, messages[model], errors[model]
 
 
 def order_groups(rows: dict, by: str) -> list:
@@ -137,12 +160,12 @@ def build_report(summaries, by: str, limit=None) -> dict:
     rows = defaultdict(lambda: dict(cost=0.0, sessions=0, messages=0, errors=0,
                                     sub_cost=0.0, sub_sessions=0))
     for s in summaries:
-        for k, cost in session_keys(s, by):
+        for k, cost, messages, errors in session_keys(s, by):
             r = rows[k]
             r["cost"] += cost
             r["sessions"] += 1
-            r["messages"] += s.message_count
-            r["errors"] += s.error_count
+            r["messages"] += messages
+            r["errors"] += errors
             if s.is_subagent:
                 r["sub_cost"] += cost
                 r["sub_sessions"] += 1

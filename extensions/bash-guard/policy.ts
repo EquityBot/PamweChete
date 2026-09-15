@@ -74,7 +74,10 @@ function tokensToStrings(tokens) {
 // Every operator that starts a new command context. Subshells (`(`/`)`) and background control
 // (`&`) are separators just as much as `&&`/`||`/`;`/`|`; leaving them out folded the commands they
 // introduce into a neighbouring segment, where they were never classified.
-const SPLIT_OPS = ["&&", "||", ";", "|", "(", ")", "&"];
+// `|&` (bash shorthand for `2>&1 |`), `;;` and `<(` are separate operator tokens in
+// shell-quote. Omitting them folded the command after the operator into the preceding
+// segment, so `curl … |& sh` was classified as a bare `curl` and never blocked.
+const SPLIT_OPS = ["&&", "||", ";", ";;", "|", "|&", "(", ")", "&", "<("];
 
 function splitOnOps(tokens, splitOps) {
 	const out = [];
@@ -315,10 +318,13 @@ function firstCommandAfterPipe(tokens, pipeIndex) {
 	return index === null ? null : commandName(tokens[index]);
 }
 
+// Both pipe forms feed stdout to the receiver; `|&` also redirects stderr.
+const PIPE_OPS = new Set(["|", "|&"]);
+
 function hasPipeToShell(tokens) {
 	const shells = new Set(["bash", "dash", "fish", "sh", "zsh"]);
 	for (let index = 0; index < tokens.length; index += 1) {
-		if (!isOpToken(tokens[index]) || tokens[index].op !== "|") continue;
+		if (!isOpToken(tokens[index]) || !PIPE_OPS.has(tokens[index].op)) continue;
 		const receiver = firstCommandAfterPipe(tokens, index);
 		if (shells.has(receiver) || receiver === ENV_SPLIT_STRING_PIPE_COMMAND) {
 			return true;
@@ -535,7 +541,16 @@ function analyzeSegment(segment) {
 	return reasons.length === 0 ? null : { severity, reasons };
 }
 
-export function analyzeBashCommand(command, options = {}) {
+// shell-quote treats a newline as ordinary whitespace and emits no operator token for it, so a
+// multi-line command parses as one segment: the first command is classified and every later line is
+// folded into its arguments. Analysing each line as well catches those later commands. The extra
+// pass only ever adds reasons, so a pipeline or quoted payload that spans lines keeps the whole
+// command's classification too.
+function commandLines(command) {
+	return command.split(/\r?\n/).filter((line) => line.trim().length > 0);
+}
+
+function analyzeOneCommand(command, options) {
 	let tokens;
 	try {
 		tokens = shellParse(command);
@@ -560,6 +575,22 @@ export function analyzeBashCommand(command, options = {}) {
 		reasons.push(...segmentRisk.reasons);
 	}
 
+	return reasons.length === 0 ? null : { severity, reasons };
+}
+
+export function analyzeBashCommand(command, options = {}) {
+	const lines = commandLines(command);
+	const passes = lines.length > 1 ? [command, ...lines] : [command];
+
+	const reasons = [];
+	let severity = "medium";
+	for (const pass of passes) {
+		const risk = analyzeOneCommand(pass, options);
+		if (!risk) continue;
+		if (risk.severity === "high") severity = "high";
+		reasons.push(...risk.reasons);
+	}
+
 	// Same second net the headless and disabled-mode floors apply, so the interactive analyser is
 	// never weaker than the floor that runs when there is nobody to prompt.
 	const catastrophicReason = findBlockedReason(command, CATASTROPHIC_BLOCKED);
@@ -576,7 +607,7 @@ const CATASTROPHIC_BLOCKED = [
 	{ pattern: /(?<!\bgit\s+)\brm\b[^#\n]*\s-(?:[a-zA-Z]*[rR]|-recursive\b)/, reason: "recursive delete (rm -r / -rf / -Rf)" },
 	{ pattern: /\bfind\b[^#\n]*\s-delete\b/, reason: "bulk deletion (find -delete)" },
 	{ pattern: /\bsudo\b/, reason: "elevated privileges (sudo)" },
-	{ pattern: /\b(curl|wget)\b[^#\n]*\|\s*(?:env\s+)?(ba?sh|zsh|fish|dash|sh)\b/, reason: "pipe to shell (remote code execution)" },
+	{ pattern: /\b(curl|wget)\b[^#\n]*\|&?\s*(?:env\s+)?(ba?sh|zsh|fish|dash|sh)\b/, reason: "pipe to shell (remote code execution)" },
 	{ pattern: /\bmkfs/, reason: "filesystem formatting (mkfs)" },
 	{ pattern: /\bnewfs_\w+/, reason: "filesystem formatting (newfs_*)" },
 	{ pattern: /\bwipefs\b/, reason: "disk signature wipe" },
@@ -654,6 +685,16 @@ const HEADLESS_GIT_SUBCOMMANDS = new Map([
 // Parses first, then classifies. The regex list below is kept only as a second net for text the
 // tokeniser drops (quoted `bash -c "..."` payloads and the like).
 function parsedBlockReason(command, headless) {
+	const lines = commandLines(command);
+	const passes = lines.length > 1 ? [command, ...lines] : [command];
+	for (const pass of passes) {
+		const reason = parsedLineBlockReason(pass, headless);
+		if (reason) return reason;
+	}
+	return null;
+}
+
+function parsedLineBlockReason(command, headless) {
 	let tokens;
 	try {
 		tokens = shellParse(command);

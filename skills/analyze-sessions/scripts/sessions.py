@@ -36,13 +36,18 @@ SESSIONS_ROOT = Path(os.path.expanduser("~/.pi/agent/sessions"))
 _REL_RE = re.compile(r"^(\d+)(d|w|h|m)$")
 
 
-def parse_date(value: str) -> datetime:
+def parse_date(value: str, *, end_of_day: bool = False) -> datetime:
     """Parse a CLI date value to an aware UTC datetime.
 
     Accepts:
       - relative: '7d', '2w', '3h', '30m'  (ago, from now)
       - ISO date: '2026-05-21'
       - ISO datetime: '2026-05-21T14:30:00' or '2026-05-21 14:30:00'
+
+    A date with no time is midnight. With end_of_day it is the last microsecond
+    of that date instead, so an upper bound given as a date covers the whole
+    day rather than stopping at midnight. A relative value names a point in
+    time, so end_of_day does not move it.
     """
     value = value.strip()
     m = _REL_RE.match(value)
@@ -58,7 +63,8 @@ def parse_date(value: str) -> datetime:
 
     # Normalise ' ' -> 'T' for ISO parsing
     normalized = value.replace(" ", "T")
-    if "T" not in normalized:
+    date_only = "T" not in normalized
+    if date_only:
         normalized = normalized + "T00:00:00"
     # Tolerate trailing 'Z'
     if normalized.endswith("Z"):
@@ -66,7 +72,10 @@ def parse_date(value: str) -> datetime:
     dt = datetime.fromisoformat(normalized)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    if date_only and end_of_day:
+        dt = dt + timedelta(days=1) - timedelta(microseconds=1)
+    return dt
 
 
 def ts_from_ms(ms: int) -> datetime:
@@ -348,7 +357,9 @@ def add_filter_args(p: argparse.ArgumentParser, *, subagents_default: bool) -> N
     passes neither --include-subagents nor --no-subagents.
     """
     p.add_argument("--since", metavar="WHEN", help="Lower bound: YYYY-MM-DD, ISO datetime, or relative (7d/2w/3h/30m).")
-    p.add_argument("--until", metavar="WHEN", help="Upper bound, same formats as --since.")
+    p.add_argument("--until", metavar="WHEN",
+                   help="Upper bound, same formats as --since. A bare date covers "
+                        "the whole of that day.")
     p.add_argument("--cwd", action="append", default=[], metavar="SUBSTR",
                    help="Substring(s) matched against session cwd. Repeatable; any match wins.")
     p.add_argument("--model", action="append", default=[], metavar="SUBSTR",
@@ -379,7 +390,7 @@ def filters_from_args(args: argparse.Namespace, *, subagents_default: bool) -> F
     if getattr(args, "since", None):
         f.since = parse_date(args.since)
     if getattr(args, "until", None):
-        f.until = parse_date(args.until)
+        f.until = parse_date(args.until, end_of_day=True)
     f.cwd_substrs = list(getattr(args, "cwd", []) or [])
     f.model_substrs = list(getattr(args, "model", []) or [])
     f.provider = getattr(args, "provider", None)

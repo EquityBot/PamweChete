@@ -5,6 +5,7 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -126,6 +127,148 @@ class SkillRegressionTests(unittest.TestCase):
             with patch.object(transcript.glob, "glob", return_value=["fabricated.json3"]):
                 transcript.download_subtitle(url, "en", False, "fabricated")
             self.assertEqual(run.call_args.args[0][-2:], ["--", url])
+
+
+    # ------------------------------------------------------------------
+    # CodeRabbit whole-repo scan, 16 September 2026
+    # ------------------------------------------------------------------
+
+    def test_a_date_only_until_covers_the_whole_day(self):
+        # --until 2026-01-01 parsed to midnight, so everything after midnight on the
+        # requested day was excluded and the cost and transcript results came back short.
+        from datetime import datetime, timezone
+        parser = argparse.ArgumentParser()
+        sessions.add_filter_args(parser, subagents_default=False)
+        args = parser.parse_args(["--until", "2026-01-01"])
+        filters = sessions.filters_from_args(args, subagents_default=False)
+        midday = SimpleNamespace(
+            started_at=datetime(2026, 1, 1, 23, 59, tzinfo=timezone.utc))
+        self.assertTrue(filters.matches(midday))
+        next_day = SimpleNamespace(
+            started_at=datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc))
+        self.assertFalse(filters.matches(next_day))
+
+    def test_an_explicit_until_time_is_left_alone(self):
+        from datetime import datetime, timezone
+        parser = argparse.ArgumentParser()
+        sessions.add_filter_args(parser, subagents_default=False)
+        args = parser.parse_args(["--until", "2026-01-01T09:00:00"])
+        filters = sessions.filters_from_args(args, subagents_default=False)
+        self.assertFalse(filters.matches(SimpleNamespace(
+            started_at=datetime(2026, 1, 1, 9, 30, tzinfo=timezone.utc))))
+
+    def test_an_ambiguous_session_prefix_is_refused(self):
+        # A prefix matching two sessions rendered the newest without saying so, which
+        # showed a different transcript from the one the caller named.
+        matches = [SimpleNamespace(id="019eaaaa-newer"), SimpleNamespace(id="019eaaaa-older")]
+        with patch.object(show_session.S, "load_summaries", return_value=matches), \
+                patch.object(sys, "argv", ["show_session.py", "--session", "019eaaaa"]), \
+                patch.object(show_session, "_render") as render:
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                self.assertEqual(show_session.main(), 1)
+            render.assert_not_called()
+            self.assertIn("Ambiguous", errors.getvalue())
+            self.assertIn("019eaaaa-newer", errors.getvalue())
+
+    def test_an_exact_session_id_wins_over_a_longer_sibling(self):
+        exact = SimpleNamespace(id="019eaaaa")
+        matches = [SimpleNamespace(id="019eaaaa-longer"), exact]
+        with patch.object(show_session.S, "load_summaries", return_value=matches), \
+                patch.object(sys, "argv", ["show_session.py", "--session", "019eaaaa"]), \
+                patch.object(show_session, "_render") as render:
+            self.assertEqual(show_session.main(), 0)
+            self.assertIs(render.call_args.args[0], exact)
+
+    def test_model_rollup_credits_each_message_once(self):
+        # Every model key used to receive the session's whole message and error count,
+        # so a two-model session reported double the messages it had.
+        records = [
+            {"type": "message", "message": {"role": "user"}},
+            {"type": "message", "message": {"role": "assistant", "model": "model-a",
+                                            "usage": {"cost": {"total": 1.0}}}},
+            {"type": "message", "message": {"role": "toolResult", "isError": True}},
+            {"type": "message", "message": {"role": "assistant", "model": "model-b",
+                                            "usage": {"cost": {"total": 2.0}}}},
+            {"type": "message", "message": {"role": "user"}},
+            {"type": "message", "message": {"role": "assistant", "model": "model-b",
+                                            "usage": {"cost": {"total": 3.0}}}},
+        ]
+        session = SimpleNamespace(
+            path="fabricated.jsonl", id="fabricated", cwd="/fabricated/project",
+            started_at=None, cost_total=6.0, message_count=6, error_count=1,
+            is_subagent=False, models={"model-a", "model-b"})
+        with patch.object(sessions, "iter_records", return_value=iter(records)):
+            rows = dict((k, (c, m, e)) for k, c, m, e in cost.session_keys(session, "model"))
+        self.assertEqual(rows["model-a"], (1.0, 3, 1))
+        self.assertEqual(rows["model-b"], (5.0, 3, 0))
+
+        with patch.object(sessions, "iter_records", return_value=iter(records)):
+            groups = cost.build_report([session], "model")["groups"]
+        self.assertEqual(sum(g["messages"] for g in groups.values()), 6)
+        self.assertEqual(sum(g["errors"] for g in groups.values()), 1)
+
+    def test_truncation_reports_the_characters_actually_dropped(self):
+        # The marker counted from max_chars, not from the text it kept, so it
+        # understated the cut by the length of the marker itself.
+        text = "x" * 500
+        out = show_session._truncate_with_count(text, 120)
+        self.assertLessEqual(len(out), 120)
+        dropped = int(re.search(r"\[(\d+) more chars elided\]", out).group(1))
+        self.assertEqual(len(text) - dropped, len(out.split("\n")[0]))
+
+    def test_render_bounds_its_dpi(self):
+        pdf_spec = importlib.util.spec_from_file_location(
+            "pdf_render_dpi", ROOT / "skills/pdf-reader/scripts/pdf_render.py")
+        pdf_render = importlib.util.module_from_spec(pdf_spec)
+        with patch.dict(sys.modules, {"pymupdf": SimpleNamespace()}):
+            pdf_spec.loader.exec_module(pdf_render)
+        for dpi in (0, -1, 100_000):
+            with self.subTest(dpi=dpi), self.assertRaisesRegex(ValueError, "DPI must be"):
+                pdf_render.render("fabricated.pdf", "all", dpi)
+
+    def test_search_refuses_negative_context(self):
+        search_spec = importlib.util.spec_from_file_location(
+            "pdf_search", ROOT / "skills/pdf-reader/scripts/pdf_search.py")
+        pdf_search = importlib.util.module_from_spec(search_spec)
+        with patch.dict(sys.modules, {"pymupdf": SimpleNamespace()}):
+            search_spec.loader.exec_module(pdf_search)
+        with self.assertRaisesRegex(ValueError, "zero or more"):
+            pdf_search.search("fabricated.pdf", "query", -1)
+
+    def test_greek_prose_is_not_read_as_maths(self):
+        info_spec = importlib.util.spec_from_file_location(
+            "pdf_info", ROOT / "skills/pdf-reader/scripts/pdf_info.py")
+        pdf_info = importlib.util.module_from_spec(info_spec)
+        with patch.dict(sys.modules, {"pymupdf": SimpleNamespace()}):
+            info_spec.loader.exec_module(pdf_info)
+        greek_prose = "αβγδε"
+        self.assertFalse(any(pdf_info._is_maths_char(c) for c in greek_prose))
+        self.assertTrue(all(pdf_info._is_greek_char(c) for c in greek_prose))
+        # A Greek letter beside a real operator still counts.
+        self.assertTrue(pdf_info._is_maths_char("∑"))
+
+    def test_yt_dlp_calls_carry_a_timeout(self):
+        url = "https://www.youtube.com/watch?v=fabricated"
+        with patch.object(transcript.subprocess, "run",
+                          return_value=SimpleNamespace(stdout="{}")) as run:
+            transcript.get_metadata(url)
+            self.assertEqual(run.call_args.kwargs["timeout"],
+                             transcript.YT_DLP_TIMEOUT_SECONDS)
+            with patch.object(transcript.glob, "glob", return_value=["fabricated.json3"]):
+                transcript.download_subtitle(url, "en", False, "fabricated")
+            self.assertEqual(run.call_args.kwargs["timeout"],
+                             transcript.YT_DLP_TIMEOUT_SECONDS)
+
+    def test_a_yt_dlp_timeout_exits_non_zero(self):
+        url = "https://www.youtube.com/watch?v=fabricated"
+        timed_out = transcript.subprocess.TimeoutExpired(cmd="yt-dlp", timeout=1)
+        with patch.object(transcript.subprocess, "run", side_effect=timed_out):
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    transcript.get_metadata(url)
+            self.assertEqual(raised.exception.code, 1)
+
 
 
 if __name__ == "__main__":

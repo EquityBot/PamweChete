@@ -14,6 +14,10 @@ import tempfile
 import json
 from urllib.parse import urlsplit
 
+# A stalled connection would otherwise block yt-dlp, and the script, indefinitely.
+# The temporary directory cleanup cannot start while a call is still blocked either.
+YT_DLP_TIMEOUT_SECONDS = 120
+
 
 def get_metadata(url):
     cmd = [
@@ -25,8 +29,13 @@ def get_metadata(url):
         url,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True,
+                                timeout=YT_DLP_TIMEOUT_SECONDS)
         return json.loads(result.stdout)
+    except subprocess.TimeoutExpired:
+        print(f"yt-dlp timed out after {YT_DLP_TIMEOUT_SECONDS}s fetching metadata.",
+              file=sys.stderr)
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"Error executing yt-dlp: {e.stderr}", file=sys.stderr)
         sys.exit(1)
@@ -75,7 +84,12 @@ def download_subtitle(url, lang, is_auto, outdir):
         url,
     ]
     try:
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True,
+                       timeout=YT_DLP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        print(f"yt-dlp timed out after {YT_DLP_TIMEOUT_SECONDS}s downloading subtitles.",
+              file=sys.stderr)
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"Error downloading subtitles via yt-dlp: {e.stderr}", file=sys.stderr)
         sys.exit(1)

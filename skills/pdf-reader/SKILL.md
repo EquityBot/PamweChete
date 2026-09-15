@@ -9,16 +9,32 @@ Read and comprehend PDF files, especially maths lecture notes and academic paper
 
 ## Setup
 
-All scripts use a venv at `SKILL_DIR/.venv` with `pymupdf` installed. If the venv is missing, create it from `requirements.txt`:
+All scripts use a venv at `SKILL_DIR/.venv` with `pymupdf` installed. A venv puts its
+interpreter in `bin` on macOS and Linux and in `Scripts` on Windows, so use the pair that
+matches the machine. If the venv is missing, create it from `requirements.txt`:
 
+macOS and Linux:
 ```bash
 python3 -m venv SKILL_DIR/.venv
 SKILL_DIR/.venv/bin/pip install -r SKILL_DIR/requirements.txt
 ```
 
-**Python command:** Always invoke scripts with:
+Windows:
+```
+py -3 -m venv SKILL_DIR\.venv
+SKILL_DIR\.venv\Scripts\pip.exe install -r SKILL_DIR\requirements.txt
+```
+
+**Python command:** Always invoke scripts with the venv interpreter, never a bare `python`:
+
+macOS and Linux:
 ```
 SKILL_DIR/.venv/bin/python SKILL_DIR/scripts/<script>.py [args]
+```
+
+Windows:
+```
+SKILL_DIR\.venv\Scripts\python.exe SKILL_DIR\scripts\<script>.py [args]
 ```
 
 ## Scripts

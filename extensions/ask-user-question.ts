@@ -598,6 +598,10 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 			}
 
 			return withUILock(async () => {
+				// The wait for the lock can outlast the call, so recheck before opening the UI.
+				if (signal?.aborted) {
+					return cancelledResult(params.question, mode, context);
+				}
 				if (mode === "text") {
 					const editorTitle = context ? `${params.question}\n\n${context}` : params.question;
 					const answer = await ctx.ui.editor(editorTitle);

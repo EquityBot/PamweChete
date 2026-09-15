@@ -9,6 +9,8 @@ import tempfile
 import pymupdf
 
 MAX_RENDER_DIRECTORIES = 64
+MIN_DPI = 1
+MAX_DPI = 1200
 
 
 def parse_pages(spec: str, total: int) -> list[int]:
@@ -48,6 +50,10 @@ def private_output_directory() -> str:
 
 
 def render(path: str, page_spec: str = "all", dpi: int = 150) -> list[str]:
+    # The bitmap grows with the square of the DPI, so an unchecked value can exhaust
+    # memory before anything is written. Zero or less produces an empty bitmap.
+    if not MIN_DPI <= dpi <= MAX_DPI:
+        raise ValueError(f"DPI must be between {MIN_DPI} and {MAX_DPI}.")
     with pymupdf.open(path) as doc:
         pages = parse_pages(page_spec, len(doc))
         out_dir = private_output_directory()

@@ -8,6 +8,10 @@ import pymupdf
 
 
 def search(path: str, query: str, context_lines: int = 3, literal: bool = False) -> None:
+    # A negative value makes the context range empty, so matches are counted but the
+    # matching line itself is never printed.
+    if context_lines < 0:
+        raise ValueError("Context lines must be zero or more.")
     doc = pymupdf.open(path)
 
     if literal:

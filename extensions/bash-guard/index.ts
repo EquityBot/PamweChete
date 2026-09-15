@@ -21,6 +21,28 @@ type Risk = {
 
 const PROMPT_TIMEOUT_MS = 120_000;
 
+// The same mutex ask-user-question.ts stashes on globalThis. ctx.ui.custom() handles one active
+// call at a time, so every pop-up-style tool must serialise against the others, not only against
+// itself. Extension files do not import each other, so both sides reach the lock through this key.
+const SHARED_UI_LOCK_KEY = "__piSharedUiLock";
+type SharedUiLock = { withLock<T>(fn: () => T | Promise<T>): Promise<T> };
+
+function getSharedUiLock(): SharedUiLock {
+	const g = globalThis as any;
+	if (!g[SHARED_UI_LOCK_KEY]) {
+		let chain: Promise<void> = Promise.resolve();
+		g[SHARED_UI_LOCK_KEY] = {
+			withLock<T>(fn: () => T | Promise<T>): Promise<T> {
+				const prev = chain;
+				let release: () => void;
+				chain = new Promise<void>((r) => { release = r; });
+				return prev.then(fn).finally(() => release!());
+			},
+		};
+	}
+	return g[SHARED_UI_LOCK_KEY] as SharedUiLock;
+}
+
 async function promptRunOrAbort(ctx: any, command: string, risk: Risk): Promise<PromptChoice> {
 	if (!ctx.hasUI) return "abort";
 
@@ -158,7 +180,7 @@ export default function bashGuard(pi: ExtensionAPI) {
 		}
 
 		if (!ctx.hasUI && pi.getFlag("bash-guard-auto-allow")) return;
-		const choice = await promptRunOrAbort(ctx, command, risk);
+		const choice = await getSharedUiLock().withLock(() => promptRunOrAbort(ctx, command, risk));
 		if (choice === "run") return;
 
 		rememberBlockedCommand(recentlyAborted, command);

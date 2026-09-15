@@ -406,7 +406,8 @@ function ipv6Hextets(address: string): number[] | null {
 // hextet fe80 to febf), fc00::/7 unique-local (fc00 to fdff), plus the IPv4 ranges above. :: is the IPv6
 // spelling of 0.0.0.0 and lands on loopback the same way. An IPv4-mapped literal carries an IPv4
 // address in its low 32 bits, so ::ffff:127.0.0.1 and its hex spelling ::ffff:7f00:1 are
-// classified as the IPv4 they carry rather than as IPv6.
+// classified as the IPv4 they carry rather than as IPv6. The deprecated IPv4-compatible spelling
+// ::127.0.0.1 carries it the same way and is classified the same way.
 function isPrivateAddress(address: string): boolean {
 	const family = isIP(address);
 	if (family === 4) return isPrivateIPv4(address);
@@ -416,7 +417,13 @@ function isPrivateAddress(address: string): boolean {
 	// A literal node:net accepted but this parser could not read: fail closed rather than clear it.
 	if (!hextets) return true;
 
-	if (hextets.slice(0, 5).every((hextet) => hextet === 0) && hextets[5] === 0xffff) {
+	// ::ffff:a.b.c.d is the IPv4-mapped spelling and ::a.b.c.d the deprecated IPv4-compatible one.
+	// Both carry the IPv4 address in the low 32 bits, so classify both as the IPv4 they carry.
+	// :: and ::1 reach isPrivateIPv4 as 0.0.0.0 and 0.0.0.1, which it already treats as private.
+	if (
+		hextets.slice(0, 5).every((hextet) => hextet === 0) &&
+		(hextets[5] === 0xffff || hextets[5] === 0)
+	) {
 		const [high, low] = [hextets[6], hextets[7]];
 		return isPrivateIPv4(
 			`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`,
