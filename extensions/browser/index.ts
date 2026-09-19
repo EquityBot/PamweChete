@@ -78,6 +78,7 @@ const ENABLED_ENTRY_TYPE = "browser-enabled";
 const KEEP_HEADERS = new Set([
   "authorization",
   "apikey",
+  "origin",
   "content-type",
   "x-client-info",
   "accept-profile",
@@ -136,6 +137,11 @@ export default function browserExtension(pi: ExtensionAPI) {
   const headless = !process.env.PI_BROWSER_HEADFUL;
 
   async function ensurePage(): Promise<Page> {
+    if (shuttingDown) {
+      throw new Error(
+        "Browser tools are disabled or shutting down; run /browser on to re-enable.",
+      );
+    }
     if (page && !page.isClosed()) return page;
 
     if (!context) {
@@ -213,6 +219,12 @@ export default function browserExtension(pi: ExtensionAPI) {
   // of the system prompt. They become callable again when /browser on flips
   // them back into the active set.
   let enabled = false;
+  // True between /browser off and the next /browser on (and at session
+  // shutdown). Queued operations check it before relaunching Chromium, so a
+  // call that was already in the queue when disable ran cannot resurrect the
+  // browser after teardown. Only enable() clears it: after disable() the tool
+  // surface is gone, so nothing legitimate can race the flag back off.
+  let shuttingDown = false;
 
   function setEnabled(on: boolean): void {
     const active = new Set(pi.getActiveTools());
@@ -226,13 +238,18 @@ export default function browserExtension(pi: ExtensionAPI) {
   }
 
   async function enable(): Promise<void> {
+    shuttingDown = false;
     setEnabled(true);
     pi.appendEntry(ENABLED_ENTRY_TYPE, { on: true });
   }
 
   async function disable(): Promise<void> {
     setEnabled(false);
-    await teardown();
+    shuttingDown = true;
+    // Queue the teardown behind any in-flight operation so a queued call
+    // cannot relaunch Chromium after disablement; the flag above keeps any
+    // later straggler queued behind it from relaunching either.
+    await serialize(teardown);
     pi.appendEntry(ENABLED_ENTRY_TYPE, { on: false });
   }
 
@@ -259,7 +276,8 @@ export default function browserExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
-    await teardown();
+    shuttingDown = true;
+    await serialize(teardown);
   });
 
   pi.registerTool({
@@ -407,7 +425,7 @@ export default function browserExtension(pi: ExtensionAPI) {
       "Use browser_network with verbose=true (and urlFilter to narrow scope) for any auth or CORS issue — it reveals the exact Authorization / apikey / Origin / content-type headers the browser actually sent, which is otherwise invisible from source.",
     ],
     description:
-      "Drain buffered network requests. Default text output is one terse line per request ('<status> <method> <url>') to keep context small.\n\nOpt-in for headers: set verbose=true to inline a curated set of request/response headers on each returned row (authorization, apikey, content-type, x-client-info, accept-profile, content-profile, prefer, location, www-authenticate, retry-after). Pass includeHeaders=['cookie','cache-control',...] to add more for this call only (case-insensitive). Best paired with urlFilter / status so headers only appear on the rows you care about.\n\nClear semantics: with clear=true (default) the ENTIRE buffer is wiped after read, not just the returned entries — this is intentional, so subsequent calls observe a fresh window of activity rather than re-walking the same subresource noise. Pass clear=false to peek without draining.\n\nCaveat: fetches whose body is never consumed (e.g. `await fetch(url)` without `.text()`/`.json()`) often appear here as 'ERR ... net::ERR_ABORTED' even though the JS side saw a successful response — Chromium cancels the body stream and Playwright reports requestfailed. Consume the body if you want a clean status row.",
+      "Drain buffered network requests. Default text output is one terse line per request ('<status> <method> <url>') to keep context small.\n\nOpt-in for headers: set verbose=true to inline a curated set of request/response headers on each returned row (authorization, apikey, origin, content-type, x-client-info, accept-profile, content-profile, prefer, location, www-authenticate, retry-after). Pass includeHeaders=['cookie','cache-control',...] to add more for this call only (case-insensitive). Best paired with urlFilter / status so headers only appear on the rows you care about.\n\nClear semantics: with clear=true (default) the ENTIRE buffer is wiped after read, not just the returned entries — this is intentional, so subsequent calls observe a fresh window of activity rather than re-walking the same subresource noise. Pass clear=false to peek without draining.\n\nCaveat: fetches whose body is never consumed (e.g. `await fetch(url)` without `.text()`/`.json()`) often appear here as 'ERR ... net::ERR_ABORTED' even though the JS side saw a successful response — Chromium cancels the body stream and Playwright reports requestfailed. Consume the body if you want a clean status row.",
     parameters: Type.Object({
       limit: Type.Optional(Type.Number()),
       urlFilter: Type.Optional(Type.String({ description: "Substring filter on URL" })),

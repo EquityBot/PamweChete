@@ -66,12 +66,14 @@ test("network details expose only the opted-in headers", async () => {
 	const tools = new Map();
 	module.default({ registerTool: tool => tools.set(tool.name, tool), registerCommand() {}, on() {}, getActiveTools: () => [], setActiveTools() {} });
 	await tools.get("browser_goto").execute("", { url: "https://example.com/" });
-	await handlers.get("requestfinished")({ method: () => "GET", url: () => "https://example.com/", resourceType: () => "fetch", headers: () => ({ authorization: "fabricated", cookie: "fabricated-cookie", "content-type": "text/plain" }), response: async () => ({ status: () => 200, statusText: () => "OK", headers: () => ({ "set-cookie": "fabricated-response", "content-type": "text/plain" }) }) });
+	await handlers.get("requestfinished")({ method: () => "GET", url: () => "https://example.com/", resourceType: () => "fetch", headers: () => ({ authorization: "fabricated", origin: "https://fabricated.example", cookie: "fabricated-cookie", "content-type": "text/plain" }), response: async () => ({ status: () => 200, statusText: () => "OK", headers: () => ({ "set-cookie": "fabricated-response", "content-type": "text/plain" }) }) });
 	for (const params of [{}, { verbose: true }, { includeHeaders: ["cookie"] }]) {
 		const result = await tools.get("browser_network").execute("", { ...params, clear: false });
 		const entry = result.details.entries[0];
 		assert.equal(entry.method, "GET");
 		assert.equal(entry.requestHeaders?.authorization, params.verbose || params.includeHeaders ? "fabricated" : undefined);
+		// origin is in the curated allowlist, matching the guideline text that promises it.
+		assert.equal(entry.requestHeaders?.origin, params.verbose || params.includeHeaders ? "https://fabricated.example" : undefined);
 		assert.equal(entry.requestHeaders?.cookie, params.includeHeaders ? "fabricated-cookie" : undefined);
 		assert.equal(entry.responseHeaders?.["set-cookie"], undefined);
 	}
@@ -135,4 +137,46 @@ test("Jina fragment responses retain the body-size limit", async () => {
         fetch: async () => new Response("x".repeat(6 * 1024 * 1024)),
     });
     assert.equal(await module.extractWithJinaReader("https://example.com/#/invoices"), null);
+});
+
+test("a queued call cannot relaunch the browser after /browser off", async () => {
+	let launches = 0;
+	let release;
+	const gate = new Promise(resolve => { release = resolve; });
+	const page = {
+		on: () => {},
+		isClosed: () => false,
+		url: () => "https://example.com/",
+		goto: async () => { await gate; return { status: () => 200 }; },
+	};
+	const module = await load("../extensions/browser/index.ts", "filterHeaders", {}, {
+		"playwright-core": { chromium: { launchPersistentContext: async () => { launches++; return { pages: () => [page], close: async () => {} }; } } },
+	});
+	const tools = new Map();
+	const commands = new Map();
+	module.default({
+		registerTool: tool => tools.set(tool.name, tool),
+		registerCommand: (name, cfg) => commands.set(name, cfg),
+		on() {},
+		getActiveTools: () => [],
+		setActiveTools() {},
+		appendEntry: () => {},
+	});
+	// First goto takes the queue and hangs inside the mocked page.goto.
+	const first = tools.get("browser_goto").execute("", { url: "https://example.com/" });
+	await new Promise(resolve => setTimeout(resolve, 0));
+	// /browser off queues the teardown behind the in-flight goto; a straggler
+	// goto queues behind the teardown. Neither may relaunch Chromium after it.
+	const off = commands.get("browser").handler("off", { ui: { notify() {} } });
+	const second = tools.get("browser_goto").execute("", { url: "https://example.com/" });
+	await new Promise(resolve => setTimeout(resolve, 0));
+	release();
+	await first;
+	await assert.rejects(second, /disabled or shutting down/);
+	await off;
+	assert.equal(launches, 1);
+	// /browser on clears the gate and a later call relaunches exactly once.
+	await commands.get("browser").handler("on", { ui: { notify() {} } });
+	await tools.get("browser_goto").execute("", { url: "https://example.com/" });
+	assert.equal(launches, 2);
 });
