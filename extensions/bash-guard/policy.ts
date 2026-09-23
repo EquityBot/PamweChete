@@ -550,7 +550,7 @@ function commandLines(command) {
 	return command.split(/\r?\n/).filter((line) => line.trim().length > 0);
 }
 
-function analyzeOneCommand(command, options) {
+function analyzeOneCommand(command, options, depth = 0) {
 	let tokens;
 	try {
 		tokens = shellParse(command);
@@ -570,9 +570,26 @@ function analyzeOneCommand(command, options) {
 
 	for (const segment of splitOnOps(tokens, SPLIT_OPS)) {
 		const segmentRisk = analyzeSegment(segment);
-		if (!segmentRisk) continue;
-		if (segmentRisk.severity === "high") severity = "high";
-		reasons.push(...segmentRisk.reasons);
+		if (segmentRisk) {
+			if (segmentRisk.severity === "high") severity = "high";
+			reasons.push(...segmentRisk.reasons);
+		}
+		// A `bash -c '...'` payload reaches analyzeSegment as one opaque token, so a wrapped
+		// command was classified as nothing at all while the same command typed directly asked
+		// for approval. Classify the payload as if it had been typed directly.
+		const payloads = nestedShellPayloads(segment);
+		if (payloads.length === 0) continue;
+		if (depth >= MAX_NEST_DEPTH) {
+			severity = "high";
+			reasons.push("nested shell wrappers too deep to verify");
+			continue;
+		}
+		for (const payload of payloads) {
+			const nested = analyzeOneCommand(payload, options, depth + 1);
+			if (!nested) continue;
+			if (nested.severity === "high") severity = "high";
+			reasons.push(...nested.reasons);
+		}
 	}
 
 	return reasons.length === 0 ? null : { severity, reasons };
@@ -682,19 +699,62 @@ const HEADLESS_GIT_SUBCOMMANDS = new Map([
 	["push", "git push (pushes are main-session operations)"],
 ]);
 
+const NESTED_SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh", "ash"]);
+// A payload strictly shrinks at each level, so recursion terminates on its own; the cap is
+// only there so a crafted stack of wrappers cannot spend the guard's time, and it blocks
+// rather than returns at the limit.
+const MAX_NEST_DEPTH = 4;
+
+// `bash -c '...'` hands the tokeniser one opaque string, so none of the git rules above ever
+// see the payload. The payload is analysed by the same code instead of by a wider regex: the
+// regex net cannot tell `git -c user.name=x` from `git -c core.pager=evil`, which is exactly
+// the distinction gitGlobalExecReason() exists to make.
+function nestedShellPayloads(segment) {
+	const index = commandIndex(segment);
+	// Both sentinels are negative, so one bound covers null, ENV_SPLIT_STRING_COMMAND and
+	// UNSAFE_TIME_COMMAND; each already has its own handling where it matters.
+	if (index === null || index < 0) return [];
+	if (!NESTED_SHELLS.has(commandName(segment[index]))) return [];
+	// With -c the command string is the first argument that is not an option or an option's
+	// value. Which argument that is depends on each shell's option rules (-o and -O take a
+	// value, attached or separate, and shells differ), so rather than guess, every argument
+	// after the -c that is not itself an option is returned and analysed. An extra one is a
+	// positional parameter at worst, and analysing it can only add a finding.
+	const rest = tokensToStrings(segment.slice(index + 1));
+	const candidates = [];
+	let readsCommandString = false;
+	let optionsEnded = false;
+	for (const arg of rest) {
+		if (!optionsEnded && (arg === "--" || arg === "-")) {
+			optionsEnded = true;
+		} else if (!optionsEnded && /^[-+]/.test(arg)) {
+			const attached = /^-[A-Za-z]*c(.*)$/s.exec(arg);
+			if (attached) {
+				readsCommandString = true;
+				// `bash -c'...'` reaches here as one token, payload attached. Whether a shell
+				// accepts that or reads it as more flags, analysing the rest costs nothing.
+				if (attached[1]) candidates.push(attached[1]);
+			}
+		} else if (readsCommandString) {
+			candidates.push(arg);
+		}
+	}
+	return candidates;
+}
+
 // Parses first, then classifies. The regex list below is kept only as a second net for text the
-// tokeniser drops (quoted `bash -c "..."` payloads and the like).
-function parsedBlockReason(command, headless) {
+// tokeniser drops.
+function parsedBlockReason(command, headless, depth = 0) {
 	const lines = commandLines(command);
 	const passes = lines.length > 1 ? [command, ...lines] : [command];
 	for (const pass of passes) {
-		const reason = parsedLineBlockReason(pass, headless);
+		const reason = parsedLineBlockReason(pass, headless, depth);
 		if (reason) return reason;
 	}
 	return null;
 }
 
-function parsedLineBlockReason(command, headless) {
+function parsedLineBlockReason(command, headless, depth = 0) {
 	let tokens;
 	try {
 		tokens = shellParse(command);
@@ -704,6 +764,12 @@ function parsedLineBlockReason(command, headless) {
 	for (const segment of splitOnOps(tokens, SPLIT_OPS)) {
 		const reason = catastrophicSegmentReason(segment);
 		if (reason) return reason;
+		const payloads = nestedShellPayloads(segment);
+		if (payloads.length > 0 && depth >= MAX_NEST_DEPTH) return "nested shell wrappers too deep to verify";
+		for (const payload of payloads) {
+			const nestedReason = parsedBlockReason(payload, headless, depth + 1);
+			if (nestedReason) return nestedReason;
+		}
 		if (!headless) continue;
 		const index = commandIndex(segment);
 		if (index === null || index === ENV_SPLIT_STRING_COMMAND) continue;

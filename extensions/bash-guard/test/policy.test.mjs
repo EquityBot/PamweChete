@@ -513,3 +513,56 @@ test("a pipeline that continues across a newline keeps its whole-command classif
 test("a benign multi-line command still stays silent", () => {
 	assert.equal(analyzeBashCommand("echo one\necho two"), null);
 });
+
+test("a shell wrapper classifies its payload exactly as the bare command", () => {
+	const payloads = [
+		"git -c diff.external=/tmp/evil.sh diff HEAD",
+		"git --config-env=core.pager=EVIL log",
+		"git --exec-path=/tmp/evil status",
+		"git ls-remote --upload-pack=/tmp/evil.sh .",
+		"git clone ext::/tmp/evil repo",
+		"GIT_EXTERNAL_DIFF=/tmp/evil.sh git diff",
+		"git grep -O/tmp/evil.sh pattern",
+	];
+
+	for (const payload of payloads) {
+		const quoted = JSON.stringify(payload);
+		const wrappers = [
+			`bash -c ${quoted}`,
+			`sh -c ${quoted}`,
+			`bash -lc ${quoted}`,
+			`bash --noprofile -c ${quoted}`,
+			`bash --rcfile /dev/null -c ${quoted}`,
+			`bash -O extglob -c ${quoted}`,
+			`bash -o pipefail -c ${quoted}`,
+			`bash -opipefail -c ${quoted}`,
+			`bash -Oextglob -c ${quoted}`,
+			`bash -oc pipefail ${quoted}`,
+			`bash -c${quoted}`,
+			`bash -c -e ${quoted}`,
+			`bash -c -- ${quoted}`,
+		];
+		for (const wrapped of wrappers) {
+			assert.ok(disabledModeBlockReason(wrapped), `disabled: ${wrapped}`);
+			assert.ok(headlessBlockReason(wrapped), `headless: ${wrapped}`);
+			assert.deepEqual(analyzeBashCommand(wrapped), analyzeBashCommand(payload), wrapped);
+		}
+	}
+});
+
+test("a shell wrapper still allows the benign git configuration it always allowed", () => {
+	for (const command of ["bash -c 'git -c user.name=Ryan log'", "sh -c 'git -c core.pager=cat status'"]) {
+		assert.equal(disabledModeBlockReason(command), null, command);
+	}
+});
+
+test("nested shell wrappers are blocked once they are too deep to verify", () => {
+	const wrap = (depth) => {
+		let command = "echo hi";
+		for (let i = 0; i < depth; i += 1) command = `bash -c ${JSON.stringify(command)}`;
+		return command;
+	};
+
+	assert.equal(disabledModeBlockReason(wrap(3)), null);
+	assert.equal(disabledModeBlockReason(wrap(5)), "nested shell wrappers too deep to verify");
+});

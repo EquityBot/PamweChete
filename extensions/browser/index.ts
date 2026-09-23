@@ -211,6 +211,42 @@ export default function browserExtension(pi: ExtensionAPI) {
     page = null;
   }
 
+  // How long disable and shutdown wait for an in-flight call before closing
+  // Chromium under it. browser_eval has no timeout and browser_goto takes the
+  // caller's, so an unbounded wait could hold the browser open past the session.
+  const TEARDOWN_GRACE_MS = 5_000;
+
+  async function teardownAfterInFlight(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const graceOver = new Promise<"expired">((resolve) => {
+      timer = setTimeout(() => resolve("expired"), TEARDOWN_GRACE_MS);
+    });
+    // Queued so a call that was mid-launch has its Chromium closed once it
+    // settles, but only while the tools are still off: after /browser on, the
+    // browser belongs to the re-enabled session.
+    const queued = serialize(async () => {
+      if (shuttingDown) await teardown();
+    });
+    const outcome = await Promise.race([queued, graceOver]);
+    clearTimeout(timer);
+    if (outcome !== "expired") return;
+    // Past the grace period: start closing the context under the in-flight call
+    // without waiting (close() can itself hang on a wedged browser), and detach
+    // the queue from that call so tools after /browser on are not chained behind
+    // a call that may never settle.
+    // ponytail: the abandoned call is not cancelled, and one wedged inside
+    // Chromium's launch could still leave a browser behind if it settles after
+    // /browser on; closing that needs a per-launch generation check.
+    // The references are dropped before the close is started, so a tool after
+    // /browser on launches a fresh browser rather than being handed the closing
+    // page; the abandoned call keeps its own reference to the old one.
+    const closing = context;
+    context = null;
+    page = null;
+    opQueue = Promise.resolve();
+    void closing?.close().catch(() => {});
+  }
+
   // Default-off gate. The browser tools collectively cost ~800 system-prompt
   // tokens (snippets + guidelines), but are needed in a small minority of
   // sessions. We keep all 8 tools registered so they appear in
@@ -249,7 +285,7 @@ export default function browserExtension(pi: ExtensionAPI) {
     // Queue the teardown behind any in-flight operation so a queued call
     // cannot relaunch Chromium after disablement; the flag above keeps any
     // later straggler queued behind it from relaunching either.
-    await serialize(teardown);
+    await teardownAfterInFlight();
     pi.appendEntry(ENABLED_ENTRY_TYPE, { on: false });
   }
 
@@ -277,7 +313,7 @@ export default function browserExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     shuttingDown = true;
-    await serialize(teardown);
+    await teardownAfterInFlight();
   });
 
   pi.registerTool({
@@ -402,7 +438,9 @@ export default function browserExtension(pi: ExtensionAPI) {
               (e) => e.text.includes(filter) || (e.location ?? "").includes(filter),
             )
           : consoleBuf.slice();
-        const out = filtered.slice(-limit);
+        // slice(-0) is slice(0), which returns everything. A limit of zero means
+        // none, so take it before the tail.
+        const out = limit > 0 ? filtered.slice(-limit) : [];
         if (params.clear ?? true) consoleBuf.length = 0;
         const text =
           out
@@ -460,7 +498,8 @@ export default function browserExtension(pi: ExtensionAPI) {
           const wanted = params.status;
           entries = entries.filter((e) => e.status === wanted);
         }
-        const out = entries.slice(-(params.limit ?? 100));
+        const netLimit = params.limit ?? 100;
+        const out = netLimit > 0 ? entries.slice(-netLimit) : [];
         if (params.clear ?? true) netBuf.length = 0;
 
         const extra = (params.includeHeaders ?? []).map((h: string) => h.toLowerCase());

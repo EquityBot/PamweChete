@@ -293,9 +293,13 @@ def iter_records(path: Path) -> Iterator[dict]:
             if not line:
                 continue
             try:
-                yield json.loads(line)
+                record = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            # Valid JSON that is not an object, null or a string or an array, has
+            # no .get(): yielding it aborted the complete scan on one bad line.
+            if isinstance(record, dict):
+                yield record
 
 
 # ---------------------------------------------------------------------------
