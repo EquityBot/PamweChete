@@ -566,3 +566,87 @@ test("nested shell wrappers are blocked once they are too deep to verify", () =>
 	assert.equal(disabledModeBlockReason(wrap(3)), null);
 	assert.equal(disabledModeBlockReason(wrap(5)), "nested shell wrappers too deep to verify");
 });
+
+test("Windows cmd and PowerShell recursive deletes are classified like rm -r", () => {
+	const blocked = [
+		"cmd //c rd /s /q build",
+		"cmd.exe /c del /s /q build",
+		'cmd /C "RD /S/Q build"',
+		"cmd //c rmdir //s //q build",
+		"C:/Windows/System32/cmd.exe /c erase /s build",
+		'powershell -Command "Remove-Item -Recurse -Force build"',
+		"pwsh -c 'Remove-Item build -Recurse'",
+		"powershell -NoProfile -c 'ri build -r -fo'",
+		"pwsh -Command 'Get-ChildItem | Remove-Item -Recurse:$true'",
+		"powershell.exe Remove-Item build -Rec",
+		"cmd /c powershell -c Remove-Item build -Recurse",
+		"bash -c 'cmd //c rd /s /q build'",
+		"powershell -EncodedCommand ZQBjAGgAbwA=",
+		"pwsh -ec ZQBjAGgAbwA=",
+		"powershell -c Format-Volume -DriveLetter D",
+		"cmd /c format d: /q",
+		'cmd /c "if exist build rd /s /q build"',
+		'cmd //c "for /d %d in (b*) do rd /s /q %d"',
+		"pwsh -c 'Microsoft.PowerShell.Management\\Remove-Item -Recurse build'",
+		"pwsh -c 'Storage\\Format-Volume -DriveLetter D'",
+		'powershell -Command "cmd /c rd /s /q build"',
+		"pwsh -c 'Get-Date; Remove-Item build -Recurse:$true'",
+	];
+	for (const command of blocked) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "high", command);
+		assert.ok(headlessBlockReason(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+	}
+
+	// A plain delete still asks for approval, like rm without -r, but is not refused outright.
+	for (const command of ["cmd //c del /q build.log", "powershell -c 'Remove-Item build.log'", "pwsh -c 'Remove-Item build.log -Recurse:$false'"]) {
+		assert.equal(analyzeBashCommand(command)?.severity, "high", command);
+		assert.equal(headlessBlockReason(command), null, command);
+	}
+
+	for (const command of [
+		"cmd //c dir /s", "cmd //c echo rd /s /q build", "powershell -c Get-ChildItem -Recurse", "pwsh -ExecutionPolicy Bypass -c Get-Date",
+		`powershell -Command "Write-Output 'Remove-Item -Recurse'"`,
+	]) {
+		assert.equal(analyzeBashCommand(command), null, command);
+		assert.equal(headlessBlockReason(command), null, command);
+	}
+});
+
+test("Windows payloads keep newline-separated commands distinct", () => {
+	for (const payload of [
+		"Remove-Item log.txt\nClear-Disk -Number 99 -RemoveData",
+		"Remove-Item log.txt\r\nFormat-Volume -DriveLetter Z",
+		"Write-Output hello\nRemove-Item build -Recurse",
+	]) {
+		const command = `pwsh -c '${payload}'`;
+		assert.ok(headlessBlockReason(command), payload);
+		assert.ok(disabledModeBlockReason(command), payload);
+	}
+});
+
+test("PowerShell output arguments are data, while nested expressions are checked", () => {
+	for (const verb of ["Write-Output", "Write-Host", "echo"]) {
+		const command = `pwsh -NoProfile -c '${verb} "Clear-Disk"'`;
+		assert.equal(analyzeBashCommand(command), null, command);
+		assert.equal(headlessBlockReason(command), null, command);
+		assert.ok(headlessBlockReason(`pwsh -c '${verb} (Clear-Disk -Number 99)'`));
+	}
+});
+
+test("PowerShell subexpressions inside strings are classified as commands", () => {
+	for (const command of [
+		`pwsh -c 'Write-Output "$(Remove-Item build -Recurse)"'`,
+		`pwsh -c 'Write-Host "done: $(Clear-Disk -Number 99)"'`,
+		`powershell -c '"$(Get-Date) $(Format-Volume -DriveLetter Z)"'`,
+		`pwsh -c 'Write-Output "$(cmd /c rd /s /q build)"'`,
+		`pwsh -c "Write-Output \\"\\$(')'; Remove-Item build -Recurse)\\""`,
+		"pwsh -c 'Write-Output \"$(`); Remove-Item build -Recurse)\"'",
+	]) {
+		assert.equal(analyzeBashCommand(command)?.severity, "high", command);
+		assert.ok(headlessBlockReason(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+	}
+	assert.equal(analyzeBashCommand(`pwsh -c 'Write-Output "$(Get-Date)"'`), null);
+});

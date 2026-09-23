@@ -27,7 +27,9 @@ which pi-subagents injects into every spawned process.
 - Prompts for: `rm`/`rmdir`/`unlink`, `sudo`, `find -delete`, `dd`, `truncate`, `sed -i`,
   `perl -pi`, `chmod/chown -R`, `mv/cp --force`, `kill`/`pkill`/`killall`, `shutdown`/`reboot`,
   `systemctl stop/disable`, `curl|sh`/`wget|sh`, `kubectl delete`, `terraform destroy`,
-  `aws s3 rm --recursive`, `gcloud delete`, and output redirection that would touch an existing
+  `aws s3 rm --recursive`, `gcloud delete`, Windows deletes through `cmd /c` (`rd`, `rmdir`,
+  `del`, `erase`) or `powershell`/`pwsh` (`Remove-Item` and its aliases), and output
+  redirection that would touch an existing
   file, escape the working directory, or use an ambiguous target
 - Allows descriptor-to-descriptor/null-device redirection and creation of a new literal file,
   matching the built-in `write` tool's ordinary file-creation behaviour
@@ -48,6 +50,9 @@ rather than a guarantee:
 | Pattern | Reason |
 |---|---|
 | `rm -r` / `-rf` / `-Rf` | Recursive deletion |
+| `cmd /c rd /s`, `del /s`; PowerShell `Remove-Item -Recurse` | Recursive deletion (Windows) |
+| `powershell -EncodedCommand` | Opaque command that cannot be checked |
+| `cmd /c format`; PowerShell `Format-Volume`, `Clear-Disk` | Disk formatting or wipe (Windows) |
 | `sudo` | Elevated privileges |
 | `curl\|sh`, `wget\|sh` | Pipe to shell (remote code execution) |
 | `mkfs*`, `newfs_*` | Filesystem formatting |

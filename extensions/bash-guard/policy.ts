@@ -405,6 +405,123 @@ function outputRedirectionReasons(tokens, cwd) {
 	return reasons;
 }
 
+// cmd and PowerShell are reachable from Git Bash on Windows, and their payloads use their own
+// syntax, so the POSIX rules above never see `rd /s` or `Remove-Item -Recurse`. `block` marks the
+// forms the headless and disabled-mode floors refuse, matching the POSIX `rm -r` rule.
+// ponytail: statement-level scan, not a PowerShell or cmd parser. A verb hidden behind a variable or
+// Invoke-Expression slips; the upgrade path is refusing those wrappers outright.
+const CMD_DELETE_VERBS = new Set(["rd", "rmdir", "del", "erase"]);
+const PS_DELETE_VERBS = new Set(["remove-item", "ri", "rm", "rmdir", "rd", "del", "erase"]);
+const PS_DISK_VERBS = new Set(["format-volume", "clear-disk", "initialize-disk", "remove-partition"]);
+const PS_POWER_VERBS = new Set(["stop-computer", "restart-computer"]);
+
+const WINDOWS_SHELLS = new Set(["cmd", "powershell", "pwsh"]);
+const CMD_DATA_VERBS = new Set(["echo", "rem"]);
+const PS_DATA_VERBS = new Set(["write-output", "write-host", "echo"]);
+const PS_TRIGGERS = new Set([...PS_DELETE_VERBS, ...PS_DISK_VERBS, ...PS_POWER_VERBS, ...WINDOWS_SHELLS]);
+const CMD_TRIGGERS = new Set([...CMD_DELETE_VERBS, "format", ...WINDOWS_SHELLS]);
+
+// Each statement as a word list. Quoted text stays one word, so a verb inside a string is data,
+// not a command. Backslashes become slashes first because shell-quote treats `\` as an escape,
+// which would fuse `Module\Remove-Item` into one name; commandName() then drops the module part.
+function windowsStatements(text) {
+	let tokens;
+	try {
+		// shell-quote treats newlines as spaces. Semicolons preserve command boundaries;
+		// inside quoted strings they remain part of the same data argument.
+		tokens = shellParse(text.replace(/\\/g, "/").replace(/\r?\n/g, ";"), (name) => `$${name}`);
+	} catch {
+		tokens = text.split(/\s+/);
+	}
+	return splitOnOps(tokens, SPLIT_OPS).map((segment) =>
+		tokensToStrings(segment).map((word) => word.replace(/^[{(]+|[})]+$/g, "")).filter(Boolean));
+}
+
+// `/s`, `/S/Q` and the `//s` form Git Bash needs to stop MSYS path conversion.
+function hasCmdSwitch(words, letter) {
+	return words.some((word) => word.startsWith("/") && word.slice(1).split("/").some((part) => part.toLowerCase() === letter));
+}
+
+// PowerShell accepts any unambiguous prefix of a parameter name, and `-Recurse:$true`;
+// `-Recurse:$false` turns recursion off.
+function isPowershellRecurse(word) {
+	const [name, value] = word.toLowerCase().split(/:(.*)/s);
+	if (value === "$false" || value === "0") return false;
+	return name.length >= 2 && "-recurse".startsWith(name);
+}
+
+function nestedWindowsRisk(shell, args, depth) {
+	if (depth >= MAX_NEST_DEPTH) return { reason: "nested shell wrappers too deep to verify", block: true };
+	return windowsShellRisk(shell, args, depth + 1);
+}
+
+// The first word in a statement that names a destructive command decides its risk. Scanning past
+// the first word catches `if exist build rd /s` and `Get-ChildItem | Remove-Item`.
+function statementsRisk(statements, triggers, classify) {
+	let found = null;
+	for (const words of statements) {
+		const at = words.findIndex((word) => triggers.has(commandName(word)));
+		if (at === -1) continue;
+		const risk = classify(commandName(words[at]), words.slice(at + 1), words[at]);
+		if (risk?.block) return risk;
+		found ??= risk;
+	}
+	return found;
+}
+
+function powershellRisk(args, depth) {
+	const lower = args.map((arg) => arg.toLowerCase());
+	const commandAt = lower.findIndex((arg) => arg === "-c" || (arg.length >= 4 && "-command".startsWith(arg)));
+	const hostArgs = commandAt === -1 ? lower : lower.slice(0, commandAt);
+	if (hostArgs.some((arg) => arg === "-e" || arg === "-ec" || (arg.length >= 3 && "-encodedcommand".startsWith(arg)))) {
+		return { reason: "powershell -EncodedCommand (opaque command execution)", block: true };
+	}
+	const payload = (commandAt === -1 ? args : args.slice(commandAt + 1)).join(" ");
+	// PowerShell runs `$(...)` even inside double-quoted strings, which windowsStatements keeps as
+	// one data word. Finding where a subexpression ends needs PowerShell's quoting rules, so
+	// everything after the first `$(` is scanned again with its quotes removed and without the
+	// output-verb exemption. This fails closed: words printed after a subexpression, such as
+	// `Write-Output "$(Get-Date) Remove-Item -Recurse"`, are treated as commands and can be
+	// refused, but a quoted `)` cannot end the scan early and hide a delete.
+	const subexpression = payload.indexOf("$(");
+	const inner = subexpression === -1 ? null
+		: powershellStatementsRisk(windowsStatements(payload.slice(subexpression + 2).replace(/["'`]/g, " ")), depth);
+	if (inner?.block) return inner;
+	const statements = windowsStatements(payload)
+		.filter((words) => !PS_DATA_VERBS.has(commandName(words[0] ?? "")));
+	const direct = powershellStatementsRisk(statements, depth);
+	return direct?.block ? direct : inner ?? direct;
+}
+
+function powershellStatementsRisk(statements, depth) {
+	return statementsRisk(statements, PS_TRIGGERS, (name, rest, word) => {
+		if (WINDOWS_SHELLS.has(name)) return nestedWindowsRisk(name, rest, depth);
+		if (PS_DISK_VERBS.has(name)) return { reason: `${word} (destructive disk operation)`, block: true };
+		if (PS_POWER_VERBS.has(name)) return { reason: "system power operation", block: true };
+		if (rest.some(isPowershellRecurse)) return { reason: "recursive delete (PowerShell Remove-Item -Recurse)", block: true };
+		return { reason: `PowerShell ${word} (file deletion)`, block: false };
+	});
+}
+
+function cmdRisk(args, depth) {
+	const at = args.findIndex((arg) => /^\/{1,2}[ck]$/i.test(arg));
+	if (at === -1) return null;
+	const statements = windowsStatements(args.slice(at + 1).join(" "))
+		.filter((words) => !CMD_DATA_VERBS.has(commandName(words[0] ?? "")));
+	return statementsRisk(statements, CMD_TRIGGERS, (name, rest) => {
+		if (WINDOWS_SHELLS.has(name)) return nestedWindowsRisk(name, rest, depth);
+		if (name === "format") return { reason: "filesystem formatting (format)", block: true };
+		if (hasCmdSwitch(rest, "s")) return { reason: `recursive delete (cmd ${name} /s)`, block: true };
+		return { reason: `cmd ${name} (file deletion)`, block: false };
+	});
+}
+
+function windowsShellRisk(cmd, args, depth = 0) {
+	if (cmd === "cmd") return cmdRisk(args, depth);
+	if (cmd === "powershell" || cmd === "pwsh") return powershellRisk(args, depth);
+	return null;
+}
+
 function analyzeSegment(segment) {
 	const reasons = [];
 	let severity = "medium";
@@ -432,6 +549,12 @@ function analyzeSegment(segment) {
 	if (cmd === "sudo") {
 		reasons.push("sudo (elevated privileges)");
 		severity = "high";
+	}
+
+	const windowsRisk = windowsShellRisk(cmd, rest);
+	if (windowsRisk) {
+		severity = "high";
+		reasons.push(windowsRisk.reason);
 	}
 
 	if (["rm", "rmdir", "unlink"].includes(cmd)) {
@@ -676,6 +799,8 @@ function catastrophicSegmentReason(segment) {
 
 	if (cmd === "git") return catastrophicGitReason(rest);
 	if (cmd === "sudo") return "elevated privileges (sudo)";
+	const windowsRisk = windowsShellRisk(cmd, rest);
+	if (windowsRisk?.block) return windowsRisk.reason;
 	if (cmd === "rm" && (hasShortFlag(rest, "r") || hasShortFlag(rest, "R") || rest.includes("--recursive"))) return "recursive delete (rm -r / -rf / -Rf)";
 	if (cmd === "find" && rest.includes("-delete")) return "bulk deletion (find -delete)";
 	if (cmd === "dd" && rest.some((arg) => arg.startsWith("of=/dev/"))) return "raw disk write (dd of=/dev/...)";
