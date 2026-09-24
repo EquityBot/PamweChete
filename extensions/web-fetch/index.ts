@@ -5,7 +5,7 @@ import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { promises as dns } from "node:dns";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 
 const USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
@@ -349,95 +349,44 @@ function isUnreadableContentError(error: string): boolean {
 	return UNREADABLE_CONTENT_ERRORS.some((prefix) => error.startsWith(prefix));
 }
 
-// The private IPv4 ranges: 0.0.0.0/8 "this host", 127.0.0.0/8 loopback, 10.0.0.0/8,
+// The private ranges. IPv4: 0.0.0.0/8 "this host", 127.0.0.0/8 loopback, 10.0.0.0/8,
 // 172.16.0.0/12, 192.168.0.0/16 and 169.254.0.0/16 link-local. 0.0.0.0/8 belongs here because a
 // connection to it lands on loopback, which makes http://0.0.0.0:8080/ a local service under
-// another name.
-function isPrivateIPv4(address: string): boolean {
-	const octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(address);
-	if (!octets) return false;
-	const [a, b] = [Number(octets[1]), Number(octets[2])];
-	return (
-		a === 0 ||
-		a === 127 ||
-		a === 10 ||
-		(a === 172 && b >= 16 && b <= 31) ||
-		(a === 192 && b === 168) ||
-		(a === 169 && b === 254)
-	);
+// another name. IPv6: fe80::/10 link-local, fc00::/7 unique-local, and ::/96, which holds ::
+// (the IPv6 spelling of 0.0.0.0), ::1 loopback and the deprecated IPv4-compatible spelling
+// ::a.b.c.d. That spelling is private whatever IPv4 address it carries, which fails closed.
+// BlockList classifies an IPv4-mapped literal (::ffff:127.0.0.1, ::ffff:7f00:1) as the IPv4
+// address it carries, so the IPv4 ranges cover those too.
+const PRIVATE_ADDRESSES = new BlockList();
+for (const [network, prefix] of [
+	["0.0.0.0", 8],
+	["127.0.0.0", 8],
+	["10.0.0.0", 8],
+	["172.16.0.0", 12],
+	["192.168.0.0", 16],
+	["169.254.0.0", 16],
+] as const) {
+	PRIVATE_ADDRESSES.addSubnet(network, prefix, "ipv4");
+}
+for (const [network, prefix] of [
+	["fe80::", 10],
+	["fc00::", 7],
+	["::", 96],
+] as const) {
+	PRIVATE_ADDRESSES.addSubnet(network, prefix, "ipv6");
 }
 
-// Expands an IPv6 literal into its 8 numeric hextets, resolving "::" compression, a trailing
-// dotted quad (::ffff:127.0.0.1) and any zone index. Ranges are membership tests over these
-// numbers: a string prefix cannot express fe80::/10, and it misses every equivalent spelling of
-// the same address. Returns null when the literal is not one this parser can read.
-function ipv6Hextets(address: string): number[] | null {
-	const [plain] = address.toLowerCase().split("%");
-	const halves = plain.split("::");
-	if (halves.length > 2) return null;
-
-	function toHextets(half: string): number[] | null {
-		if (!half) return [];
-		const fields = half.split(":");
-		const hextets: number[] = [];
-		for (const [index, field] of fields.entries()) {
-			const quad = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(field);
-			if (quad && index === fields.length - 1) {
-				const octets = quad.slice(1).map(Number);
-				if (octets.some((octet) => octet > 255)) return null;
-				hextets.push((octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]);
-				continue;
-			}
-			if (!/^[0-9a-f]{1,4}$/.test(field)) return null;
-			hextets.push(parseInt(field, 16));
-		}
-		return hextets;
-	}
-
-	const head = toHextets(halves[0]);
-	const tail = halves.length === 2 ? toHextets(halves[1]) : [];
-	if (!head || !tail) return null;
-	const compressed = 8 - head.length - tail.length;
-	if (halves.length === 2 ? compressed < 0 : compressed !== 0) return null;
-	return [...head, ...new Array(compressed).fill(0), ...tail];
-}
-
-// One address literal, classified: ::1 loopback, :: unspecified, fe80::/10 link-local (first
-// hextet fe80 to febf), fc00::/7 unique-local (fc00 to fdff), plus the IPv4 ranges above. :: is the IPv6
-// spelling of 0.0.0.0 and lands on loopback the same way. An IPv4-mapped literal carries an IPv4
-// address in its low 32 bits, so ::ffff:127.0.0.1 and its hex spelling ::ffff:7f00:1 are
-// classified as the IPv4 they carry rather than as IPv6. The deprecated IPv4-compatible spelling
-// ::127.0.0.1 carries it the same way and is classified the same way.
 function isPrivateAddress(address: string): boolean {
 	const family = isIP(address);
-	if (family === 4) return isPrivateIPv4(address);
-	if (family !== 6) return false;
-
-	const hextets = ipv6Hextets(address);
-	// A literal node:net accepted but this parser could not read: fail closed rather than clear it.
-	if (!hextets) return true;
-
-	// ::ffff:a.b.c.d is the IPv4-mapped spelling and ::a.b.c.d the deprecated IPv4-compatible one.
-	// Both carry the IPv4 address in the low 32 bits, so classify both as the IPv4 they carry.
-	// :: and ::1 reach isPrivateIPv4 as 0.0.0.0 and 0.0.0.1, which it already treats as private.
-	if (
-		hextets.slice(0, 5).every((hextet) => hextet === 0) &&
-		(hextets[5] === 0xffff || hextets[5] === 0)
-	) {
-		const [high, low] = [hextets[6], hextets[7]];
-		return isPrivateIPv4(
-			`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`,
-		);
+	if (family === 0) return false;
+	// A zone index (fe80::1%eth0) names an interface, not part of the address.
+	const [plain] = address.split("%");
+	try {
+		return PRIVATE_ADDRESSES.check(plain, family === 4 ? "ipv4" : "ipv6");
+	} catch {
+		// A literal node:net accepted but BlockList could not read: fail closed rather than clear it.
+		return true;
 	}
-	if (hextets.slice(0, 7).every((hextet) => hextet === 0)) {
-		return hextets[7] === 0 || hextets[7] === 1;
-	}
-
-	const first = hextets[0];
-	return (
-		(first >= 0xfe80 && first <= 0xfebf) ||
-		(first >= 0xfc00 && first <= 0xfdff)
-	);
 }
 
 // Loopback, link-local and private-range targets are internal: neither their hostnames nor the
