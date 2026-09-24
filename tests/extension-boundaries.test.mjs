@@ -180,3 +180,47 @@ test("a queued call cannot relaunch the browser after /browser off", async () =>
 	await tools.get("browser_goto").execute("", { url: "https://example.com/" });
 	assert.equal(launches, 2);
 });
+
+test("the private-host guard classifies range edges and resolved names", async () => {
+	const answers = {
+		"payroll.corp.example": [{ address: "192.168.4.20", family: 4 }],
+		"mixed.example": [{ address: "93.184.216.34", family: 4 }, { address: "fd00::1", family: 6 }],
+		"public.example": [{ address: "93.184.216.34", family: 4 }],
+		"empty.example": [],
+	};
+	const lookup = async host => {
+		if (host in answers) return answers[host];
+		throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND" });
+	};
+	const module = await load("../extensions/web-fetch/index.ts", "isPrivateHost", {}, {
+		"node:dns": { promises: { lookup } },
+	});
+	const expected = {
+		"http://0.0.0.0:8080/": true,
+		"http://172.15.255.255/": false,
+		"http://172.16.0.1/": true,
+		"http://172.31.255.255/": true,
+		"http://172.32.0.1/": false,
+		"http://192.168.1.1/": true,
+		"http://169.254.169.254/latest/meta-data/": true,
+		"http://[::]/": true,
+		"http://[fe80::1]/": true,
+		"http://[febf::1]/": true,
+		"http://[fec0::1]/": false,
+		"http://[fc00::1]/": true,
+		"http://[fdff::1]/": true,
+		"http://[::ffff:7f00:1]/": true,
+		"http://localhost:3000/": true,
+		"http://app.localhost/": true,
+		"http://printer.local/": true,
+		"http://payroll.corp.example/": true,
+		"http://mixed.example/": true,
+		"http://empty.example/": true,
+		"http://unresolvable.example/": true,
+		"http://public.example/": false,
+		"not a url": true,
+	};
+	for (const [url, isPrivate] of Object.entries(expected)) {
+		assert.equal(await module.isPrivateHost(url), isPrivate, url);
+	}
+});
