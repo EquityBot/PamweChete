@@ -224,3 +224,95 @@ test("the private-host guard classifies range edges and resolved names", async (
 		assert.equal(await module.isPrivateHost(url), isPrivate, url);
 	}
 });
+
+test("search query construction quotes, excludes and scopes sites", async () => {
+	const module = await load("../extensions/web-search/index.ts", "buildSearchQuery,cleanQuery,cleanItems,stripWrappingQuotes,normalizeSite,quoteForSearch");
+	assert.equal(module.cleanQuery(undefined), undefined);
+	assert.equal(module.cleanQuery(123), undefined);
+	assert.equal(module.cleanQuery("   "), undefined);
+	assert.equal(module.cleanQuery("  payroll\n close "), "payroll close");
+	assert.equal(module.stripWrappingQuotes('"quoted"'), "quoted");
+	assert.equal(module.stripWrappingQuotes("plain"), "plain");
+	assert.equal(module.stripWrappingQuotes('"'), '"');
+	assert.deepEqual(module.cleanItems(["  two   words ", '"kept phrase"', '""', ""]), ["two words", "kept phrase"]);
+	assert.equal(module.normalizeSite("site:Example.com/path"), "example.com");
+	assert.equal(module.normalizeSite("https://sub.example.co.uk/deep/path"), "sub.example.co.uk");
+	assert.equal(module.normalizeSite("example.com///"), "example.com");
+	assert.equal(module.normalizeSite("  "), undefined);
+	assert.equal(module.normalizeSite("not a url"), "not a url");
+	assert.equal(module.quoteForSearch('say "hi"'), '"say \\"hi\\""');
+
+	assert.throws(() => module.buildSearchQuery({}), /At least one of 'query' or 'exactPhrases'/);
+	assert.throws(() => module.buildSearchQuery({ query: "  " }), /At least one of 'query' or 'exactPhrases'/);
+	const built = module.buildSearchQuery({
+		query: "  payroll   close ",
+		exactPhrases: ['"lodgment 2026"'],
+		excludeTerms: ["draft report", "noise"],
+		site: "site:ato.gov.au",
+	});
+	assert.equal(built.query, 'payroll close "lodgment 2026" -"draft report" -noise site:ato.gov.au');
+	assert.equal(built.baseQuery, "payroll close");
+	assert.deepEqual(built.exactPhrases, ["lodgment 2026"]);
+	assert.deepEqual(built.excludeTerms, ["draft report", "noise"]);
+	assert.equal(built.site, "ato.gov.au");
+	// exactPhrases alone satisfies the requirement, and phrases are re-quoted
+	// even when the caller already wrapped them in quote marks.
+	assert.equal(module.buildSearchQuery({ exactPhrases: ['one "two"'] }).query, '"one \\"two\\""');
+});
+
+test("snippet parsing rejects malformed files and defaults the metadata", async () => {
+	const module = await load("../extensions/prompt-snippets/index.ts", "parseSnippet", {}, {
+		"@earendil-works/pi-tui": { Text: class {}, Key: {}, matchesKey: () => false, truncateToWidth: (s) => s, wrapTextWithAnsi: (s) => s },
+	});
+	assert.equal(module.parseSnippet("plain.md", "no frontmatter"), null);
+	assert.equal(module.parseSnippet("empty.md", "---\nname: x\n---\n   \n"), null);
+	assert.deepEqual(
+		{ ...module.parseSnippet("rules.md", '---\nName: "Concise"\ndescription: Short   form\nplacement: prepend\norder: 3\n---\n  Body text.  \n') },
+		{ id: "rules.md", name: "Concise", description: "Short   form", placement: "prepend", order: 3, body: "Body text." },
+	);
+	assert.deepEqual(
+		{ ...module.parseSnippet("fallback.md", "---\nplacement: later\norder: fabricated\n---\nbody") },
+		{ id: "fallback.md", name: "fallback", description: "", placement: "append", order: 9999, body: "body" },
+	);
+	assert.equal(module.parseSnippet("crlf.md", "---\r\nname: crlf\r\n---\r\nbody text").body, "body text");
+});
+
+test("browser buffers stay bounded and header filtering honours the allowlist", async () => {
+	const module = await load("../extensions/browser/index.ts", "pushBounded,filterHeaders", {}, {
+		"playwright-core": { chromium: { launchPersistentContext: async () => ({ pages: () => [] }) } },
+	});
+	const buf = [];
+	for (let i = 0; i < 1005; i++) module.pushBounded(buf, i);
+	assert.equal(buf.length, 1000);
+	assert.equal(buf[0], 5);
+	assert.equal(buf[999], 1004);
+	assert.deepEqual(
+		{ ...module.filterHeaders(
+			{ "Content-Type": "text/plain", cookie: "fabricated", Authorization: "fabricated", origin: "https://fabricated.example" },
+			new Set(["content-type", "origin"]),
+		) },
+		{ "Content-Type": "text/plain", origin: "https://fabricated.example" },
+	);
+});
+
+test("serialised calls run one at a time and a rejection does not poison the queue", async () => {
+	const module = await load("../extensions/browser/index.ts", "serialize", {}, {
+		"playwright-core": { chromium: { launchPersistentContext: async () => ({ pages: () => [] }) } },
+	});
+	const order = [];
+	const first = module.serialize(async () => {
+		order.push("start:1");
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		order.push("end:1");
+		return 1;
+	});
+	const second = module.serialize(async () => {
+		order.push("start:2");
+		return 2;
+	});
+	assert.equal(await first, 1);
+	assert.equal(await second, 2);
+	assert.deepEqual(order, ["start:1", "end:1", "start:2"]);
+	await assert.rejects(module.serialize(async () => { throw new Error("fabricated failure"); }), /fabricated failure/);
+	assert.equal(await module.serialize(async () => 3), 3);
+});
