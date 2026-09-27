@@ -8,29 +8,12 @@ from pathlib import Path
 import tempfile
 import pymupdf
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pdf_extract import parse_pages  # noqa: E402
+
 MAX_RENDER_DIRECTORIES = 64
 MIN_DPI = 1
 MAX_DPI = 1200
-
-
-def parse_pages(spec: str, total: int) -> list[int]:
-    """Parse page spec like 'all', '1-5', '1,3,7', '3' into 0-indexed list."""
-    if spec.strip().lower() == "all":
-        return list(range(total))
-
-    pages = set()
-    for part in spec.split(","):
-        part = part.strip()
-        if "-" in part:
-            start, end = part.split("-", 1)
-            start = max(1, int(start))
-            end = min(total, int(end))
-            pages.update(range(start - 1, end))
-        else:
-            p = int(part) - 1
-            if 0 <= p < total:
-                pages.add(p)
-    return sorted(pages)
 
 
 def private_output_directory() -> str:

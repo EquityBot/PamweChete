@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 
 import sessions as S
 
+_extract_text = S._extract_text
+
 # Sessions whose header carries no parsable timestamp sort last, against the same aware sentinel
 # sessions.load_summaries orders by, so every sort key stays a datetime.
 _UNDATED = datetime.min.replace(tzinfo=timezone.utc)
@@ -97,18 +99,6 @@ def _collect_prompts(path, max_chars: int, min_chars: int):
             continue
         out.append((m.get("timestamp"), text))
     return out
-
-
-def _extract_text(content) -> str:
-    if not isinstance(content, list):
-        return ""
-    chunks = []
-    for c in content:
-        if isinstance(c, dict) and c.get("type") == "text":
-            t = c.get("text")
-            if t:
-                chunks.append(t)
-    return "\n".join(chunks)
 
 
 def _render_markdown(sess_prompts, total_prompts: int) -> None:
