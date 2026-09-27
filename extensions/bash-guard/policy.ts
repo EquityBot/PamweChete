@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
-import { parse as shellParse } from "shell-quote";
+import { parse as shellParse, quote as shellQuote } from "shell-quote";
 
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
 	"blame",
@@ -522,6 +522,45 @@ function windowsShellRisk(cmd, args, depth = 0) {
 	return null;
 }
 
+// How rtk 0.49 runs the command after these subcommands: proxy executes its arguments as an
+// argv, err, test and summary join them and run the result through a shell, and run executes
+// its -c/--command string or its joined arguments with sh -c. smart only reads a file.
+const RTK_ARGV = new Set(["proxy"]);
+const RTK_SHELL = new Set(["err", "test", "summary"]);
+// Flags that end rtk before anything runs.
+const RTK_STOPS = new Set(["-h", "--help", "-V", "--version"]);
+
+// rtk's options take no value, except run's -c/--command, and come before what they qualify,
+// so the subcommand, and after it the command, is the first argument that is not an option.
+// A help or version flag runs nothing, which reads as no argument at all.
+function rtkSubcommandIndex(args) {
+	for (let at = 0; at < args.length; at++) {
+		if (RTK_STOPS.has(args[at])) return args.length;
+		if (!args[at].startsWith("-")) return at;
+	}
+	return args.length;
+}
+
+// The shell commands `rtk run` executes: each -c/--command value, and the positional arguments
+// joined, as sh -c receives them.
+function rtkRunCommands(args) {
+	const commands = [];
+	const positional = [];
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (RTK_STOPS.has(arg)) return [];
+		if (arg === "-c" || arg === "--command") {
+			if (i + 1 < args.length) commands.push(args[++i]);
+			continue;
+		}
+		const attached = /^(?:-c|--command=)(.+)$/s.exec(arg);
+		if (attached) commands.push(attached[1]);
+		else if (!(arg.startsWith("-") && positional.length === 0)) positional.push(arg);
+	}
+	if (positional.length > 0) commands.push(positional.join(" "));
+	return commands;
+}
+
 function analyzeSegment(segment) {
 	const reasons = [];
 	let severity = "medium";
@@ -541,9 +580,12 @@ function analyzeSegment(segment) {
 	if (envReason) reasons.push(envReason);
 
 	// rtk wraps a real command, so classify the wrapped command and keep the git rules below in force.
-	if (cmd === "rtk" && commandName(rest[0] ?? "") === "git") {
-		cmd = "git";
-		rest = rest.slice(1);
+	if (cmd === "rtk") {
+		const at = rtkSubcommandIndex(rest);
+		if (commandName(rest[at] ?? "") === "git") {
+			cmd = "git";
+			rest = rest.slice(at + 1);
+		}
 	}
 
 	if (cmd === "sudo") {
@@ -839,6 +881,24 @@ function nestedShellPayloads(segment) {
 	// Both sentinels are negative, so one bound covers null, ENV_SPLIT_STRING_COMMAND and
 	// UNSAFE_TIME_COMMAND; each already has its own handling where it matters.
 	if (index === null || index < 0) return [];
+	if (commandName(segment[index]) === "rtk") {
+		// Only `rtk git` was unwrapped, so `rtk proxy git checkout -- .` was silent while the
+		// bare form prompted. The wrapped command is analysed whole, like a `bash -c` payload,
+		// so env hooks, nested shells and further rtk wrappers inside it are all seen, and it
+		// is rebuilt the way rtk runs it: proxy's argv stays quoted word by word, so a literal
+		// argument such as 'safe; rm -rf /' is not read as a second command.
+		const args = tokensToStrings(segment.slice(index + 1));
+		const at = rtkSubcommandIndex(args);
+		const sub = commandName(args[at] ?? "");
+		const rest = args.slice(at + 1);
+		if (sub === "run") return rtkRunCommands(rest);
+		if (!RTK_ARGV.has(sub) && !RTK_SHELL.has(sub)) return [];
+		const command = rest.slice(rtkSubcommandIndex(rest));
+		if (command.length === 0) return [];
+		if (!RTK_ARGV.has(sub)) return [command.join(" ")];
+		// proxy splits a lone argument on whitespace into words, without a shell.
+		return [shellQuote(command.length === 1 ? command[0].trim().split(/\s+/) : command)];
+	}
 	if (!NESTED_SHELLS.has(commandName(segment[index]))) return [];
 	// With -c the command string is the first argument that is not an option or an option's
 	// value. Which argument that is depends on each shell's option rules (-o and -O take a
@@ -907,7 +967,9 @@ function parsedLineBlockReason(command, headless, depth = 0) {
 }
 
 function findBlockedReason(command, rules) {
-	const normalizedCommand = command.replace(/(^|(?:&&|\|\||[;|])\s*)rtk(?:\.exe)?\s+git\b/gi, "$1git");
+	const normalizedCommand = command.replace(
+		/(^|(?:&&|\|\||[;|])\s*)rtk(?:\.exe)?(?:\s+(?!-[hV]\b|--(?:help|version)\b)-[\w-]+)*\s+(?:(?:proxy|err|test|summary|run)\s+)?git\b/gi,
+		"$1git");
 	for (const { pattern, reason } of rules) {
 		if (pattern.test(normalizedCommand)) return reason;
 	}

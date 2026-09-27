@@ -356,7 +356,9 @@ function isUnreadableContentError(error: string): boolean {
 // (the IPv6 spelling of 0.0.0.0), ::1 loopback and the deprecated IPv4-compatible spelling
 // ::a.b.c.d. That spelling is private whatever IPv4 address it carries, which fails closed.
 // BlockList classifies an IPv4-mapped literal (::ffff:127.0.0.1, ::ffff:7f00:1) as the IPv4
-// address it carries, so the IPv4 ranges cover those too.
+// address it carries, so the IPv4 ranges cover those too. 100.64.0.0/10 (carrier-grade NAT) and
+// 198.18.0.0/15 (benchmarking) are not public either, and 64:ff9b::/96 (NAT64) and 2002::/16
+// (6to4) embed an IPv4 address this list cannot see, so they fail closed as well.
 const PRIVATE_ADDRESSES = new BlockList();
 for (const [network, prefix] of [
 	["0.0.0.0", 8],
@@ -365,6 +367,8 @@ for (const [network, prefix] of [
 	["172.16.0.0", 12],
 	["192.168.0.0", 16],
 	["169.254.0.0", 16],
+	["100.64.0.0", 10],
+	["198.18.0.0", 15],
 ] as const) {
 	PRIVATE_ADDRESSES.addSubnet(network, prefix, "ipv4");
 }
@@ -372,6 +376,8 @@ for (const [network, prefix] of [
 	["fe80::", 10],
 	["fc00::", 7],
 	["::", 96],
+	["64:ff9b::", 96],
+	["2002::", 16],
 ] as const) {
 	PRIVATE_ADDRESSES.addSubnet(network, prefix, "ipv6");
 }
@@ -639,6 +645,9 @@ async function fetchAndExtract(
 		return { url, title: "", content: "", error: "Invalid URL" };
 	}
 
+	// Scope: the direct fetch reaches whatever this machine can, loopback and private networks
+	// included, because the tool runs on the user's own workstation. isPrivateHost only keeps an
+	// internal URL, and the query string addressed to it, from reaching the third-party fallback.
 	const httpResult = await extractViaHttp(url, signal);
 	if (signal?.aborted)
 		return { url, title: "", content: "", error: "Aborted" };

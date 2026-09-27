@@ -82,6 +82,7 @@ Avoid cloning this repo directly into `~/.pi/agent` unless it is a fresh setup. 
 - `rtk/`: asks RTK to compress supported Bash command output after bash-guard checks the command
 - `prompt-snippets/`: small, reusable behaviour rules toggled onto a message before sending; reset after send
 - `web-fetch/`: fetch a URL and get clean markdown
+  - Ryan's scope note: it fetches any address this machine can reach, loopback and private networks included; its private-address check only stops an internal URL going to the Jina fallback
 - `web-search/`: web search
 
 ### Skills

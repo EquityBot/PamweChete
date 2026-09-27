@@ -218,6 +218,61 @@ test("RTK-prefixed state-changing Git operations keep the same protection", () =
 	assert.match(headlessBlockReason("rtk git push") ?? "", /git push/i);
 });
 
+test("RTK pass-through wrappers keep the wrapped command's protection", () => {
+	// Only `rtk git` was unwrapped, so `rtk proxy git checkout -- .` ran silently while the
+	// bare form prompted.
+	// The wrapped command is analysed whole, so nested shells, env hooks, quoted command
+	// strings, -c/--command values and further rtk wrappers inside it are seen too.
+	for (const [wrapped, bare] of [
+		["rtk proxy git checkout -- .", "git checkout -- ."],
+		["rtk err git restore .", "git restore ."],
+		["rtk proxy git branch -D x", "git branch -D x"],
+		["rtk summary rm -rf build", "rm -rf build"],
+		['rtk run "git checkout -- ."', "git checkout -- ."],
+		["rtk run git checkout -- .", "git checkout -- ."],
+		["rtk run --command='git push'", "git push"],
+		["rtk run -c 'git push'", "git push"],
+		["rtk proxy bash -c 'git checkout -- .'", "git checkout -- ."],
+		["rtk proxy sh -ec 'git checkout -- .'", "git checkout -- ."],
+		["rtk proxy env GIT_SSH_COMMAND=evil git ls-remote origin", "env GIT_SSH_COMMAND=evil git ls-remote origin"],
+		["rtk proxy 'git push'", "git push"],
+		['rtk summary "git checkout -- ."', "git checkout -- ."],
+		["rtk proxy rtk run 'git push'", "git push"],
+		// rtk's global flags come before the subcommand, and its own flags before the command.
+		["rtk -v proxy git checkout -- .", "git checkout -- ."],
+		["rtk --ultra-compact --skip-env err git restore .", "git restore ."],
+		["rtk -vv git checkout -- .", "git checkout -- ."],
+		["rtk proxy --skip-env git checkout -- .", "git checkout -- ."],
+		// summary, test and err run their joined words through a shell.
+		["rtk summary echo 'a; rm -rf build'", "echo a; rm -rf build"],
+	]) {
+		const expected = analyzeBashCommand(bare);
+		assert.ok(expected, bare);
+		const found = analyzeBashCommand(wrapped);
+		assert.equal(found?.severity, expected.severity, wrapped);
+		for (const reason of expected.reasons) assert.ok(found.reasons.includes(reason), `${wrapped}: ${reason}`);
+	}
+	assert.equal(analyzeBashCommand("rtk proxy git status --short"), null);
+	// proxy passes literal arguments, so wrapping adds nothing to what the bare command gets
+	// from the whole-text net; a help or version flag, or smart, runs no command at all.
+	for (const [wrapped, bare] of [
+		["rtk proxy printf 'safe; rm -rf /'", "printf 'safe; rm -rf /'"],
+		["rtk proxy printf 'x; git checkout -- .'", "printf 'x; git checkout -- .'"],
+		["rtk proxy echo -c 'rm -rf /'", "echo -c 'rm -rf /'"],
+		["rtk proxy 'echo a && rm -rf /'", "echo 'a && rm -rf /'"],
+	]) {
+		assert.deepEqual(analyzeBashCommand(wrapped), analyzeBashCommand(bare), wrapped);
+	}
+	for (const command of ["rtk --version git push", "rtk proxy --help git push", "rtk smart notes.md"]) {
+		assert.equal(analyzeBashCommand(command), null, command);
+	}
+	assert.match(headlessBlockReason("rtk proxy git push") ?? "", /git push/i);
+	assert.match(headlessBlockReason("rtk proxy rtk run 'git push'") ?? "", /git push/i);
+	assert.match(headlessBlockReason("rtk -vv git push") ?? "", /git push/i);
+	assert.match(headlessBlockReason("rtk --ultra-compact proxy git push") ?? "", /git push/i);
+	assert.match(disabledModeBlockReason("rtk err git push --force") ?? "", /force/i);
+});
+
 test("harmless pipelines do not prompt", () => {
 	const commands = [
 		"git log --oneline | head -20",
