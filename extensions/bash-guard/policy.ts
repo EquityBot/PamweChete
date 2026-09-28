@@ -524,7 +524,8 @@ function windowsShellRisk(cmd, args, depth = 0) {
 
 // How rtk 0.49 runs the command after these subcommands: proxy executes its arguments as an
 // argv, err, test and summary join them and run the result through a shell, and run executes
-// its -c/--command string or its joined arguments with sh -c. smart only reads a file.
+// its -c/--command string or its joined arguments with sh -c (cmd /C on Windows).
+// smart only reads a file.
 const RTK_ARGV = new Set(["proxy"]);
 const RTK_SHELL = new Set(["err", "test", "summary"]);
 // Flags that end rtk before anything runs.
@@ -541,24 +542,38 @@ function rtkSubcommandIndex(args) {
 	return args.length;
 }
 
-// The shell commands `rtk run` executes: each -c/--command value, and the positional arguments
-// joined, as sh -c receives them.
+// `rtk run` prefers -c/--command over positional arguments. Clap stops parsing options at
+// the first positional value (including unknown flags), or at --. Later flags are data.
 function rtkRunCommands(args) {
-	const commands = [];
-	const positional = [];
+	let command;
+	let positionalStart = args.length;
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
-		if (RTK_STOPS.has(arg)) return [];
+		if (arg === "--") {
+			positionalStart = i + 1;
+			break;
+		}
+		// run has help, but no version flag. Its only short options are h and c; Clap's
+		// allow_hyphen_values makes a whole short token positional if any letter is unknown.
+		if (arg === "--help" || /^-h[ch]*$/.test(arg)) return [];
+		if (arg === "--ultra-compact" || arg === "--skip-env") continue;
 		if (arg === "-c" || arg === "--command") {
-			if (i + 1 < args.length) commands.push(args[++i]);
+			if (i + 1 < args.length) command = args[++i];
 			continue;
 		}
-		const attached = /^(?:-c|--command=)(.+)$/s.exec(arg);
-		if (attached) commands.push(attached[1]);
-		else if (!(arg.startsWith("-") && positional.length === 0)) positional.push(arg);
+		if (arg.startsWith("--command=")) {
+			command = arg.slice("--command=".length);
+			continue;
+		}
+		if (/^-c[ch]+$/.test(arg)) {
+			command = arg.slice(2);
+			continue;
+		}
+		positionalStart = i;
+		break;
 	}
-	if (positional.length > 0) commands.push(positional.join(" "));
-	return commands;
+	if (command !== undefined) return [command];
+	return positionalStart < args.length ? [args.slice(positionalStart).join(" ")] : [];
 }
 
 function analyzeSegment(segment) {

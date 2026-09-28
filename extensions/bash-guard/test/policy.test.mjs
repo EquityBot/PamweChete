@@ -273,6 +273,69 @@ test("RTK pass-through wrappers keep the wrapped command's protection", () => {
 	assert.match(disabledModeBlockReason("rtk err git push --force") ?? "", /force/i);
 });
 
+test("RTK run preserves command arguments after its first positional value", () => {
+	for (const command of ["git -C fixture clean -f", "git -C fixture push --force", "git -C fixture diff --output=fixture.patch"]) {
+		const bare = `sh -c '${command}'`;
+		for (const tail of ["--help", "-h", "--version", "-V", "-c ignored", "--command=ignored"]) {
+			const wrapped = `rtk run "${bare}" ${tail}`;
+			for (const classify of [analyzeBashCommand, disabledModeBlockReason, headlessBlockReason]) {
+				assert.deepEqual(classify(wrapped), classify(bare), wrapped);
+			}
+		}
+	}
+});
+
+test("RTK run keeps explicit commands after unknown flags and option terminators", () => {
+	const bare = "git -C fixture clean -f";
+	for (const tail of ["--version", "-V", "--unknown --help", "-hx --help", "-chx --help", "-ccx --help", "-- --help", "-- -h", "ignored --help", "'-c=echo ignored' --help", "'-cecho ignored' --help"]) {
+		const wrapped = `rtk run -c '${bare}' ${tail}`;
+		for (const classify of [analyzeBashCommand, disabledModeBlockReason, headlessBlockReason]) {
+			assert.deepEqual(classify(wrapped), classify(bare), wrapped);
+		}
+	}
+});
+
+test("RTK run does not execute command-like positional data when -c wins", () => {
+	const data = "git -C fixture clean -f";
+	for (const command of [
+		`rtk run echo -c '${data}'`,
+		`rtk run echo --command='${data}'`,
+		`rtk run -c 'echo safe' '${data}'`,
+		`rtk run --command='echo safe' '${data}'`,
+		`rtk run -c '' '${data}'`,
+		`rtk run --command= '${data}'`,
+		`rtk run -ch '${data}'`,
+		`rtk run -cch '${data}'`,
+	]) {
+		for (const classify of [analyzeBashCommand, disabledModeBlockReason, headlessBlockReason]) {
+			assert.equal(classify(command), null, command);
+		}
+	}
+});
+
+test("RTK run recognises help only while it is still parsing options", () => {
+	for (const flag of ["--help", "-h", "-hc", "-hch"]) {
+		const command = `rtk run -c 'git -C fixture clean -f' ${flag}`;
+		for (const classify of [analyzeBashCommand, disabledModeBlockReason, headlessBlockReason]) {
+			assert.equal(classify(command), null, command);
+		}
+	}
+});
+
+test("RTK run handles its global flags and explicit option terminator", () => {
+	const bare = "git -C fixture clean -f";
+	for (const wrapped of [
+		`rtk run --ultra-compact --skip-env -c '${bare}'`,
+		`rtk run -c '${bare}' --skip-env --ultra-compact`,
+		`rtk run -- '${bare}'`,
+		`rtk run --ultra-compact '${bare}'`,
+	]) {
+		for (const classify of [analyzeBashCommand, disabledModeBlockReason, headlessBlockReason]) {
+			assert.deepEqual(classify(wrapped), classify(bare), wrapped);
+		}
+	}
+});
+
 test("harmless pipelines do not prompt", () => {
 	const commands = [
 		"git log --oneline | head -20",
