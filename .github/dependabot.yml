@@ -10,6 +10,12 @@ updates:
       actions:
         patterns:
           - "*"
+    ignore:
+      # The release-policy pin is an immutable full commit SHA, advanced only
+      # by a reviewed re-pin of its workflow family. A Dependabot bump adds an
+      # unapproved SHA to the portfolio audit without changing the workflow,
+      # so re-pin by hand instead.
+      - dependency-name: "ryanduguid/release-policy/.github/workflows/*"
 
   # One npm entry per directory holding a package.json. Extension dependencies
   # are kept with the extension, so there is no root manifest to cover them all.
