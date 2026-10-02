@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills/analyze-sessions/scripts"))
 import cost
 import sessions
+import search
 import show_session
 
 spec = importlib.util.spec_from_file_location(
@@ -26,6 +27,36 @@ spec.loader.exec_module(transcript)
 
 
 class SkillRegressionTests(unittest.TestCase):
+    def test_search_and_renderers_keep_only_nonempty_text_blocks_in_order(self):
+        content = [None, 7, {"type": "image", "text": "ignored"},
+                   {"type": "text", "text": ""}, {"type": "text", "text": "first"},
+                   {"type": "text", "text": "second"}]
+        record = {"type": "message", "message": {"role": "user", "content": content}}
+        pattern = re.compile("first|second")
+        with patch.object(search.S, "iter_records", return_value=iter([record])):
+            hits = search._search_session(SimpleNamespace(path="fabricated.jsonl"), "user",
+                                          pattern.search, pattern.finditer, 10, 1, 100)
+        self.assertEqual([hit["line"] for hit in hits], [1, 2])
+        self.assertTrue(all(hit["snippet"] == "first\nsecond" for hit in hits))
+        for render, args in [(show_session._render_user, ({"content": content}, "12:00")),
+                             (show_session._render_tool_result, ({"content": content}, "12:00", 0))]:
+            with self.subTest(renderer=render.__name__), contextlib.redirect_stdout(io.StringIO()) as output:
+                render(*args)
+                self.assertIn("first\nsecond", output.getvalue())
+                self.assertNotIn("ignored", output.getvalue())
+
+    def test_search_and_renderers_reject_a_truthy_nonstring_text_value(self):
+        content = [{"type": "text", "text": 7}]
+        record = {"type": "message", "message": {"role": "user", "content": content}}
+        pattern = re.compile("7")
+        with patch.object(search.S, "iter_records", return_value=iter([record])), self.assertRaises(TypeError):
+            search._search_session(SimpleNamespace(path="fabricated.jsonl"), "user",
+                                   pattern.search, pattern.finditer, 10, 1, 100)
+        with self.assertRaises(TypeError):
+            show_session._render_user({"content": content}, "12:00")
+        with self.assertRaises(TypeError):
+            show_session._render_tool_result({"content": content}, "12:00", 0)
+
     def test_pdf_output_uses_a_private_user_cache_directory(self):
         pdf_spec = importlib.util.spec_from_file_location("pdf_render", ROOT / "skills/pdf-reader/scripts/pdf_render.py")
         pdf_render = importlib.util.module_from_spec(pdf_spec)

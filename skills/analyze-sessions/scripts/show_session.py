@@ -154,7 +154,7 @@ def _render(s: S.SessionSummary, args) -> None:
 
 
 def _render_user(m: dict, ts: str) -> None:
-    text = _join_text(m.get("content"))
+    text = S._extract_text(m.get("content"))
     print(f"## 👤 User  ·  {ts}")
     print()
     print(text or "_(empty)_")
@@ -213,7 +213,7 @@ def _render_tool_result(m: dict, ts: str, max_chars: int) -> None:
     name = m.get("toolName") or "?"
     is_err = m.get("isError")
     badge = " ❌ ERROR" if is_err else ""
-    text = _join_text(m.get("content"))
+    text = S._extract_text(m.get("content"))
     if max_chars and len(text) > max_chars:
         text = _truncate_with_count(text, max_chars)
     print(f"### ↳ {name}{badge}  ·  {ts}")
@@ -226,17 +226,6 @@ def _render_tool_result(m: dict, ts: str, max_chars: int) -> None:
         print(fence)
         print()
 
-
-def _join_text(content) -> str:
-    if not isinstance(content, list):
-        return ""
-    parts = []
-    for c in content:
-        if isinstance(c, dict) and c.get("type") == "text":
-            t = c.get("text")
-            if t:
-                parts.append(t)
-    return "\n".join(parts)
 
 
 def _msg_ts(m: dict) -> str:

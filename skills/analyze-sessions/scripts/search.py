@@ -105,7 +105,7 @@ def _search_session(s: S.SessionSummary, scope: str, matcher, finditer,
         m = rec.get("message") or {}
         role = m.get("role")
         if role == "user" and scope in ("user", "both"):
-            text = _join_text(m.get("content"))
+            text = S._extract_text(m.get("content"))
             hits.extend(_collect(text, "user", matcher, finditer, context_lines,
                                  snippet_chars))
         elif role == "assistant" and scope in ("assistant", "both"):
@@ -156,17 +156,6 @@ def _print_session_hits(s: S.SessionSummary, hits) -> None:
             print(f"     {line}")
     print()
 
-
-def _join_text(content) -> str:
-    if not isinstance(content, list):
-        return ""
-    parts = []
-    for c in content:
-        if isinstance(c, dict) and c.get("type") == "text":
-            t = c.get("text")
-            if t:
-                parts.append(t)
-    return "\n".join(parts)
 
 
 if __name__ == "__main__":
