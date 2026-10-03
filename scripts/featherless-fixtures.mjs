@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, lstatSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { cleanEnvironment } from "./featherless-runner.mjs";
@@ -41,22 +41,33 @@ export function prepareFixture(fixture, cwd) {
 }
 
 export function verifyFixture(fixture, cwd, metrics, observed = {}) {
- let preserved = readFileSync(join(cwd, ".pamwechete-check.mjs"), "utf8") === fixture.check;
- for (const [name, text] of Object.entries(fixture.files)) {
-  if (!fixture.writes.includes(name)) preserved &&= existsSync(join(cwd, name)) && readFileSync(join(cwd, name), "utf8") === text;
- }
- if (!preserved) return { passed: false, reason: "protected_file_changed" };
+ const protectedFiles = Object.entries({ ...fixture.files, ".pamwechete-check.mjs": fixture.check })
+  .filter(([name]) => !fixture.writes.includes(name));
+ const identities = new Map();
+ const preserved = () => {
+  try {
+   return protectedFiles.every(([name, text]) => {
+    const file = join(cwd, name), stat = lstatSync(file), previous = identities.get(name);
+    if (!stat.isFile() || stat.isSymbolicLink() || readFileSync(file, "utf8") !== text) return false;
+    if (previous && (stat.dev !== previous.dev || stat.ino !== previous.ino)) return false;
+    identities.set(name, { dev: stat.dev, ino: stat.ino });
+    return true;
+   });
+  } catch { return false; }
+ };
+ if (!preserved()) return { passed: false, reason: "protected_file_changed" };
  const reporter = new URL("./featherless-test-reporter.mjs", import.meta.url).href;
  const result = spawnSync(process.execPath, ["--test", "--test-reporter=" + reporter, ".pamwechete-check.mjs"], {
   cwd, env: cleanEnvironment(join(cwd, "unused-agent-dir")), encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 1024 * 1024
  });
+ if (!preserved()) return { passed: false, reason: "protected_file_changed" };
  // A module that exits during import can make Node report the file itself as passing.
  const expectedCheck = fixture.check.match(/test\("([^"]+)"/)[1];
  const events = (result.stdout ?? "").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
  const fixturePassed = result.status === 0 && events.some(event => event.type === "test:pass" && event.name === expectedCheck)
   && !events.some(event => event.type === "test:fail");
  const protocolPassed = metrics.exitCode === 0 && !metrics.failure && metrics.settled && metrics.truncated === 0 && metrics.providerErrors === 0;
- const interactionPassed = (!fixture.requiresQuestion || observed.question) && (!fixture.requiresFailedTool || (observed.failedCheck && !observed.changedBeforeFailure));
+ const interactionPassed = (!fixture.requiresQuestion || observed.question) && (!fixture.requiresFailedTool || (observed.failedCheck && observed.successfulCheck && !observed.changedBeforeFailure));
  return { passed: Boolean(fixturePassed && protocolPassed && interactionPassed),
   reason: !fixturePassed ? "fixture_check_failed" : !protocolPassed ? "incomplete_agent_run" : !interactionPassed ? "required_interaction_missing" : null };
 }

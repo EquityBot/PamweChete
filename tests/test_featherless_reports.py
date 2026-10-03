@@ -23,10 +23,11 @@ def runtime(code="f" * 64, version="0.87.1"):
 
 def report():
     return {
-        "schemaVersion": 3, "kind": "live", "runId": "synthetic", "modelId": "test/model", "runtime": runtime(), "runtimeVerified": True, "executionVerified": True,
+        "schemaVersion": 3, "kind": "live", "runId": "synthetic", "modelId": "test/model", "runtime": runtime(), "runtimeVerified": True, "executionVerified": True, "cleanupVerified": True,
         "requestDigest": "a" * 64, "fixtureDigest": "b" * 64, "piVersion": "0.87.1",
         "resourcesDigest": "c" * 64, "harnessDigest": "d" * 64,
-        "profileFiles": {"settings.json": "e" * 64}, "plan": {"contextWindow": 32768, "fixtures": ["test"], "repeats": 1},
+        "profileFiles": {"settings.json": "e" * 64}, "plan": {"contextWindow": 32768, "fixtures": ["test"], "repeats": 1, "maxRequests": 192, "reservationPerRequestUsd": 0.001},
+        "maxEstimatedUsd": 1,
         "runs": [{"fixture": "test", "repetition": 1, "passed": True, "estimatedUsageUsd": 0.01,
                   "metrics": {"elapsedMs": 120, "toolErrors": 0, "repeatedCalls": 1, "retries": 0, "truncated": 0}}],
     }
@@ -100,6 +101,40 @@ class FeatherlessReportTests(unittest.TestCase):
         value["runs"].append(value["runs"][0].copy())
         with self.assertRaises(ValueError):
             cost.benchmark_reports([self.save(value)])
+
+    def test_cleanup_verification_is_required(self):
+        for verified in (False, None, 1, "true"):
+            value = report()
+            value["cleanupVerified"] = verified
+            with self.subTest(verified=verified), self.assertRaisesRegex(ValueError, "cleanup"):
+                cost.benchmark_reports([self.save(value)])
+
+    def test_request_spending_and_reservation_limits_remain_separate(self):
+        first = self.save(report())
+        for field, changed in (("maxRequests", 1), ("maxEstimatedUsd", 0.01),
+                               ("reservationPerRequestUsd", 0.002)):
+            second = report()
+            second["runId"] = "limited"
+            target = second if field == "maxEstimatedUsd" else second["plan"]
+            target[field] = changed
+            second["runs"][0].update(passed=False, skipped=True, estimatedUsageUsd=None)
+            with self.subTest(field=field):
+                rows = cost.benchmark_reports([first, self.save(second, "second.json")])
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(sum(row["skipped"] for row in rows), 1)
+                self.assertEqual(rows[0]["max_requests"], 192)
+                self.assertEqual(rows[0]["max_estimated_usd"], 1)
+
+    def test_invalid_budget_identity_is_rejected(self):
+        for field, invalid in (("maxRequests", True), ("maxRequests", 0),
+                               ("maxRequests", 10001), ("maxEstimatedUsd", 0),
+                               ("maxEstimatedUsd", float("inf")),
+                               ("reservationPerRequestUsd", -1)):
+            value = report()
+            target = value if field == "maxEstimatedUsd" else value["plan"]
+            target[field] = invalid
+            with self.subTest(field=field, invalid=invalid), self.assertRaises(ValueError):
+                cost.benchmark_reports([self.save(value)])
 
     def test_context_and_source_versions_remain_separate(self):
         first = self.save(report())

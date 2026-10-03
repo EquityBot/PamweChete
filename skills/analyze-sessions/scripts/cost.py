@@ -143,6 +143,8 @@ def benchmark_reports(paths) -> list[dict]:
             if report["schemaVersion"] == 3:
                 if report.get("executionVerified") is not True:
                     raise ValueError("Configuration was not verified after the evaluation")
+                if report.get("cleanupVerified") is not True:
+                    raise ValueError("Owned workspace cleanup was not verified")
                 runtime_key = ("fingerprinted", runtime["digest"])
             else:
                 runtime_key = ("configuration-unverified", report["runId"])
@@ -156,20 +158,28 @@ def benchmark_reports(paths) -> list[dict]:
         if report["schemaVersion"] >= 2 and not fixtures:
             raise ValueError("Missing fixture selection")
         expected_cases = None
+        budgets = (None, None, None)
         if report["schemaVersion"] == 3:
             repeats = number(report["plan"].get("repeats"), integer=True)
             if not 1 <= repeats <= 10:
                 raise ValueError("Invalid fixture repetition count")
             expected_cases = {(fixture, repetition) for fixture in fixtures
                               for repetition in range(1, repeats + 1)}
+            max_requests = number(report["plan"].get("maxRequests"), integer=True)
+            max_estimated_usd = number(report.get("maxEstimatedUsd"))
+            reservation = number(report["plan"].get("reservationPerRequestUsd"))
+            if not 1 <= max_requests <= 10000 or max_estimated_usd <= 0:
+                raise ValueError("Invalid qualification budget")
+            budgets = (max_requests, max_estimated_usd, reservation)
         context = number(report["plan"]["contextWindow"], integer=True)
         key = (report["modelId"], report["requestDigest"], report["fixtureDigest"], report["piVersion"],
-               context, report["resourcesDigest"], report["harnessDigest"], json.dumps(report["profileFiles"], sort_keys=True), runtime_key, tuple(sorted(fixtures)))
+               context, report["resourcesDigest"], report["harnessDigest"], json.dumps(report["profileFiles"], sort_keys=True), runtime_key, tuple(sorted(fixtures)), budgets)
         group = groups.setdefault(key, {
             "model": key[0], "request_digest": key[1], "fixture_digest": key[2], "pi_version": key[3],
             "context_window": context, "resources_digest": key[5], "harness_digest": key[6], "profile_files": report["profileFiles"],
             "runtime_status": runtime_key[0], "runtime": runtime,
             "fixtures": sorted(fixtures),
+            "max_requests": budgets[0], "max_estimated_usd": budgets[1], "reservation_per_request_usd": budgets[2],
             "runs": 0, "passed": 0, "skipped": 0, "tool_errors": 0, "repeated_calls": 0,
             "retries": 0, "truncated": 0, "estimated_usage_usd": 0.0, "elapsed_ms": [],
         })

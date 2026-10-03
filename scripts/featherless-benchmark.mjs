@@ -19,7 +19,7 @@ export function summariseRuns(runs) {
   retries: runs.reduce((n,r)=>n+(r.metrics?.retries??0),0), truncated: runs.reduce((n,r)=>n+(r.metrics?.truncated??0),0) };
 }
 
-export async function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2), { createWorkspace = temporaryWorkspace, runFixture = runPi } = {}) {
  const { values } = parseArgs({ args, options: {
   model: { type: "string" }, "plan-context": { type: "string" }, repeat: { type: "string", default: "3" },
   pi: { type: "string" }, "agent-dir": { type: "string" }, out: { type: "string" }, live: { type: "boolean" },
@@ -53,9 +53,9 @@ export async function main(args = process.argv.slice(2)) {
  const execution = executionIdentity(profile, values["agent-dir"]);
  // Claim the result path before starting anything billable, without replacing an older result.
  writeFileSync(resolve(values.out), "", { flag: "wx", mode: 0o600 });
- const workspace = temporaryWorkspace("pamwechete-benchmark-"), { root } = workspace;
+ const workspace = createWorkspace("pamwechete-benchmark-"), { root } = workspace;
  let proxy;
- const report = { schemaVersion: 3, kind: "live", runId: "run_" + Date.now(), startedAt: new Date().toISOString(), runtime, runtimeVerified: false, executionVerified: false,
+ const report = { schemaVersion: 3, kind: "live", runId: "run_" + Date.now(), startedAt: new Date().toISOString(), runtime, runtimeVerified: false, executionVerified: false, cleanupVerified: false,
   modelId: model.id, piVersion: catalogue.piVersion, requestDigest: profile.requestDigest, fixtureDigest: fixtureDigest(),
   resourcesDigest: execution.resourcesDigest, harnessDigest: execution.harnessDigest,
   profileFiles: manifest.files, plan, maxEstimatedUsd, runs: [], proxy: null,
@@ -81,17 +81,20 @@ export async function main(args = process.argv.slice(2)) {
     prepareFixture(fixture, cwd);
     const guard = join(root, fixture.id + "-" + repetition + "-guard.mjs");
     writeFileSync(guard, guardSource(fixture, cwd));
-    const observed = { question: false, failedCheck: false, changedBeforeFailure: false }, checks = new Set();
+    const observed = { question: false, failedCheck: false, successfulCheck: false, changedBeforeFailure: false }, checks = new Set();
     verifyExecution(profile, values["agent-dir"], execution);
     assert.equal(piRuntime(values.pi).digest, runtime.digest, "Pi runtime changed before a fixture");
-    const metrics = await runPi({ cliPath: values.pi, cwd, agentDir: resolve(values["agent-dir"]), prompt: fixture.prompt,
+    const metrics = await runFixture({ cliPath: values.pi, cwd, agentDir: resolve(values["agent-dir"]), prompt: fixture.prompt,
      extraArgs: ["--provider", "featherless", "--model", model.id, "--extension", routing, "--extension", guard], onEvent: event => {
       if (event.type === "tool_execution_start") {
        if (event.toolName === "ask_user_question" && /alpha/i.test(JSON.stringify(event.args)) && /beta/i.test(JSON.stringify(event.args))) observed.question = true;
        if (event.toolName === "bash" && event.args?.command === "node --test .pamwechete-check.mjs") checks.add(event.toolCallId);
        if (["write", "edit"].includes(event.toolName) && !observed.failedCheck) observed.changedBeforeFailure = true;
       }
-      if (event.type === "tool_execution_end" && checks.delete(event.toolCallId) && event.isError) observed.failedCheck = true;
+      if (event.type === "tool_execution_end" && checks.delete(event.toolCallId)) {
+       if (event.isError) { observed.failedCheck = true; observed.successfulCheck = false; }
+       else if (observed.failedCheck) observed.successfulCheck = true;
+      }
      } });
     let verdict;
     try { verdict = verifyFixture(fixture, cwd, metrics, observed); }
@@ -100,17 +103,19 @@ export async function main(args = process.argv.slice(2)) {
      metrics.outputTokens * model.metadata.pricing.output) / 1_000_000 : null;
     report.runs.push({ fixture: fixture.id, repetition, ...verdict, metrics, estimatedUsageUsd });
     save();
+    assert.notEqual(metrics.failure, "termination_failed", "Pi process-tree termination was not established");
    }
   }
  } finally {
   try {
    await proxy?.close();
-   try {
-    report.runtimeVerified = piRuntime(values.pi).digest === runtime.digest;
-    verifyExecution(profile, values["agent-dir"], execution);
-    report.executionVerified = true;
-   } finally { report.finishedAt = new Date().toISOString(); save(); }
-  } finally { workspace.remove(); }
+   report.runtimeVerified = piRuntime(values.pi).digest === runtime.digest;
+   verifyExecution(profile, values["agent-dir"], execution);
+   report.executionVerified = true;
+  } finally {
+   try { workspace.remove(); report.cleanupVerified = true; }
+   finally { report.finishedAt = new Date().toISOString(); save(); }
+  }
  }
  assert.ok(report.runtimeVerified, "Pi runtime changed during the evaluation");
  assert.ok(report.executionVerified, "Evaluation configuration was not verified");

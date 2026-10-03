@@ -9,7 +9,7 @@ import { budgetProxy } from "./featherless-proxy.mjs";
 import { guardSource } from "./featherless-fixtures.mjs";
 
 export async function smoke(cliPath, scenario = "native") {
- assert.ok(["native", "retry", "truncated", "missing-finish", "stored-auth"].includes(scenario));
+ assert.ok(["native", "retry", "retry-limit", "truncated", "missing-finish", "stored-auth"].includes(scenario));
  const catalogue = loadCatalogue();
  const runtime = piRuntime(cliPath);
  assert.equal(runtime.version, catalogue.piVersion, "Pi version differs from the pinned integration baseline");
@@ -29,8 +29,8 @@ export async function smoke(cliPath, scenario = "native") {
    let text = ""; for await (const chunk of req) { text += chunk; if (text.length > 2 * 1024 * 1024) throw new Error("request too large"); }
    const body = JSON.parse(text); requests.push(body); requestTimes.push(Date.now());
    if (scenario === "stored-auth") assert.equal(req.headers.authorization, "Bearer synthetic-stored");
-   if (scenario === "retry" && requests.length === 1) {
-    res.writeHead(429, { "Content-Type": "application/json", "Retry-After-Ms": "900" });
+   if (["retry", "retry-limit"].includes(scenario) && requests.length === 1) {
+    res.writeHead(429, { "Content-Type": "application/json", "Retry-After-Ms": scenario === "retry-limit" ? "60000" : "900" });
     res.end('{"error":{"message":"Synthetic capacity error"}}'); return;
    }
    const index = requests.length - (scenario === "retry" ? 2 : 1);
@@ -61,12 +61,19 @@ export async function smoke(cliPath, scenario = "native") {
   writeFileSync(guard, guardSource({ writes: ["answer.txt"] }, cwd));
   const agentDir = join(root, "agent");
   stageProfile(profile, agentDir, { candidate: true });
-  const result = await runPi({ cliPath, cwd, agentDir, timeoutMs: 60000, extraArgs: ["--provider", "featherless", "--model", profile.model.id, ...(storedAuth ? [] : ["--api-key", "synthetic"]), "--extension", routing, "--extension", guard], prompt: "Run the synthetic tool round trip.", onEvent: e => events.push(e), onDiagnostic: text => diagnostics.push(text) });
+  const result = await runPi({ cliPath, cwd, agentDir, timeoutMs: scenario === "retry-limit" ? 15000 : 60000, extraArgs: ["--provider", "featherless", "--model", profile.model.id, ...(storedAuth ? [] : ["--api-key", "synthetic"]), "--extension", routing, "--extension", guard], prompt: "Run the synthetic tool round trip.", onEvent: e => events.push(e), onDiagnostic: text => diagnostics.push(text) });
   assert.equal(proxy.counters.requests, requests.length, "A request bypassed the budget proxy");
   assert.equal(requests[0].model, profile.model.id);
   assert.ok(JSON.stringify(requests[0].messages).includes("Coding agreement"), "The staged coding agreement was not loaded");
   assert.equal(requests[0].max_tokens, profile.model.request.maxTokens);
   for (const [key, value] of Object.entries(profile.model.request.samplingParams)) assert.equal(requests[0][key], value, "Sampling setting was lost");
+  if (scenario === "retry-limit") {
+   assert.ok(result.providerErrors > 0, "An excessive retry delay was not rejected by Pi");
+   assert.ok(events.some(event => /Server requested 60s retry delay \(max: 30s\)/.test(event.message?.errorMessage ?? "")),
+    "The configured delay ceiling was not applied: " + JSON.stringify(events.filter(event=>event.message?.errorMessage).map(event=>event.message.errorMessage)));
+   assert.notEqual(result.failure, "deadline", "Pi waited until the task deadline");
+   return { ok: true, scenario, runtime, requests: requests.length, metrics: result };
+  }
   if (scenario === "truncated") {
    assert.ok(result.truncated > 0, "Truncation was not recorded");
    return { ok: true, scenario, runtime, requests: requests.length, metrics: result };

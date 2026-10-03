@@ -152,6 +152,73 @@ test("independent fixture checks reject a broken solution, accept repair and rej
  writeFileSync(join(cwd,".pamwechete-check.mjs"),"");assert.equal(verifyFixture(fixture,cwd,metrics).reason,"protected_file_changed");
 });
 
+test("passing generated code cannot change protected files during verification",t=>{
+ const root=temporary(t),fixture=FIXTURES.find(f=>f.id==="multi-step-create");
+ const metrics={exitCode:0,failure:null,settled:true,truncated:0,providerErrors:0};
+ for(const [index,mutation] of [
+  'writeFileSync("sum.mjs","changed");',
+  'writeFileSync(".pamwechete-check.mjs","");',
+  'renameSync("sum.mjs","saved.mjs");writeFileSync("sum.mjs",readFileSync("saved.mjs"));'
+ ].entries()) {
+  const cwd=join(root,"fixture-"+index);prepareFixture(fixture,cwd);
+  writeFileSync(join(cwd,"result.json"),'{"average":4}');
+  writeFileSync(join(cwd,"average.mjs"),'import {sum} from "./sum.mjs"; import {writeFileSync,renameSync,readFileSync} from "node:fs"; '+mutation+
+   ' export const average = values => values.length ? sum(values)/values.length : null;');
+  assert.equal(verifyFixture(fixture,cwd,metrics).reason,"protected_file_changed");
+ }
+});
+
+function fabricatedEvaluation(t,fixtures=["orientation"]) {
+ const root=temporary(t),agentDir=join(root,"agent"),cliPath=fakePi(join(root,"runtime")),out=join(root,"report.json");
+ const profile=buildProfile(snapshot(),"qwen38-trohrbaugh",32768);
+ stageProfile(profile,agentDir,{candidate:true});
+ const previousFetch=globalThis.fetch;t.after(()=>{globalThis.fetch=previousFetch;});
+ globalThis.fetch=async url=>{
+  assert.ok(String(url).startsWith("https://api.featherless.ai/v1/models/"),"Fabricated evaluation attempted generation");
+  const model=profile.model;
+  return new Response(JSON.stringify({id:model.id,status:"active",features:{tool_use:true},context_length:model.metadata.contextLength,
+   max_completion_tokens:model.metadata.maxCompletionTokens,pricing:{prompt:model.metadata.pricing.input/1e6,completion:model.metadata.pricing.output/1e6}}));
+ };
+ return {out,args:["--live","--model",profile.model.key,"--plan-context","32768","--repeat","1",
+  ...fixtures.flatMap(id=>["--fixture",id]),"--pi",cliPath,"--agent-dir",agentDir,"--out",out,"--max-estimated-usd","1"]};
+}
+const completedMetrics=()=>({exitCode:0,failure:null,settled:true,truncated:0,providerErrors:0,usageKnown:false});
+
+test("owned cleanup failure leaves a report that is explicitly unverified",async t=>{
+ const evaluation=fabricatedEvaluation(t);
+ await assert.rejects(main(evaluation.args,{
+  createWorkspace:prefix=>{const workspace=temporaryWorkspace(prefix);return {root:workspace.root,remove(){workspace.remove();throw new Error("Synthetic cleanup failure");}};},
+  runFixture:async({cwd})=>{writeFileSync(join(cwd,"answer.txt"),"This project totals integer cents without floating-point rounding.\n");return completedMetrics();}
+ }),/Synthetic cleanup failure/);
+ const report=JSON.parse(readFileSync(evaluation.out,"utf8"));
+ assert.equal(report.runs[0].passed,true);assert.equal(report.executionVerified,true);
+ assert.equal(report.cleanupVerified,false);assert.equal(report.proxy.requests,0);
+});
+
+test("uncertain process-tree termination stops evaluation before the next fixture",async t=>{
+ const evaluation=fabricatedEvaluation(t,["orientation","seeded-repair"]);let started=0;
+ await assert.rejects(main(evaluation.args,{runFixture:async()=>{started++;return {...completedMetrics(),failure:"termination_failed"};}}),/termination was not established/);
+ const report=JSON.parse(readFileSync(evaluation.out,"utf8"));
+ assert.equal(started,1);assert.equal(report.runs.length,1);assert.equal(report.runs[0].passed,false);
+ assert.equal(report.proxy.requests,0);assert.equal(report.cleanupVerified,true);
+});
+
+for(const rerun of [false,true]) test("failed-check recovery requires a successful later check: "+rerun,async t=>{
+ const evaluation=fabricatedEvaluation(t,["failed-check-recovery"]);
+ const report=await main(evaluation.args,{runFixture:async({cwd,onEvent})=>{
+  const check=(id,isError)=>{
+   onEvent({type:"tool_execution_start",toolName:"bash",toolCallId:id,args:{command:"node --test .pamwechete-check.mjs"}});
+   onEvent({type:"tool_execution_end",toolCallId:id,isError});
+  };
+  check("failed",true);
+  onEvent({type:"tool_execution_start",toolName:"write"});
+  writeFileSync(join(cwd,"even.mjs"),"export const isEven = value => value % 2 === 0;");
+  if(rerun) check("repaired",false);
+  return completedMetrics();
+ }});
+ assert.equal(report.runs[0].passed,rerun);assert.equal(report.cleanupVerified,true);assert.equal(report.proxy.requests,0);
+});
+
 test("execution identity detects staged and referenced resource drift between fixtures",t=>{
  const root=temporary(t),resource=join(root,"extension.mjs"),agentDir=join(root,"agent");
  writeFileSync(resource,"export default () => {};\n");
@@ -258,7 +325,7 @@ for (const fixture of FIXTURES) test("fixture controls: " + fixture.id,t=>{
  const metrics={exitCode:0,failure:null,settled:true,truncated:0,providerErrors:0};
  assert.equal(verifyFixture(fixture,cwd,metrics).passed,false,"An unfinished fixture passed");
  for(const [name,text] of Object.entries(solutions[fixture.id])) writeFileSync(join(cwd,name),text);
- const observed={question:true,failedCheck:true};
+ const observed={question:true,failedCheck:true,successfulCheck:true};
  assert.equal(verifyFixture(fixture,cwd,metrics,observed).passed,true,"A correct fixture failed");
  assert.equal(verifyFixture(fixture,cwd,{...metrics,truncated:1},observed).passed,false,"Truncated agent output passed");
 });

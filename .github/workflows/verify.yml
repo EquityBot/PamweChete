@@ -61,6 +61,8 @@ jobs:
         run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
       - name: Test Pi capacity retry
         run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" retry
+      - name: Test Pi excessive retry delay refusal
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" retry-limit
       - name: Test Pi truncation handling
         run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" truncated
       - name: Test Pi missing finish reason handling
