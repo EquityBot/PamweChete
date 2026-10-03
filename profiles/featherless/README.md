@@ -151,7 +151,8 @@ python skills/analyze-sessions/scripts/cost.py --benchmark-report C:/pi-evaluati
 ```
 
 Comparisons keep different model settings, context limits, Pi versions, fixtures,
-runtime fingerprints, resource hashes and runner code separate. Schema 2 reports
+runtime fingerprints, resource hashes and runner code separate. Schema 3 also
+separates request limits, spending limits and per-request reservations. Schema 2 reports
 record hashes of compiled Pi code, package metadata and the shipped shrinkwrap,
 plus Node version, platform and architecture. The package's source revision is
 recorded when supplied by its metadata. A fingerprint identifies local bytes; it
@@ -159,8 +160,11 @@ does not authenticate the publisher or attest to external dependencies and OS
 libraries. Private configuration and sessions are excluded.
 Schema 3 also checks the staged configuration, referenced resources and harness
 before each fixture and at completion. Comparisons reject new reports if either
-final verification did not finish or the runs differ from the declared fixtures
-and repetitions. The runner records an unverified result and fails when it
+final verification or owned-workspace cleanup did not finish, or the runs differ
+from the declared fixtures and repetitions. Protected regular files are checked
+again after generated code executes. Failed-check recovery requires an observed
+successful rerun, and uncertain process-tree termination stops further fixtures.
+The runner records an unverified result and fails when it
 detects drift. Changes made and restored between checks remain undetectable.
 
 Schema 1 reports remain readable but carry `legacy-unverified` runtime status.
@@ -198,6 +202,8 @@ completed tool results, summaries and tool schemas survive as appropriate. These
 checks need no Featherless key and make no model generation calls.
 Another check verifies stored-login reuse with a fabricated credential and a
 loopback server.
+The retry-limit check verifies Pi's configured 30-second provider-delay ceiling.
+Pi can then start a separate outer retry; every forwarded attempt reserves again.
 
 ```text
 node --experimental-vm-modules --test tests/featherless-workflow.test.mjs
