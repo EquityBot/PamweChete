@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdirSync, symlinkSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, symlinkSync, copyFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import test from "node:test";
 import { loadCatalogue, validateCatalogue, buildProfile, stageProfile, inspectStage, checkProvider, normaliseMetadata, routingSource, executionIdentity, verifyExecution } from "../scripts/featherless-profile.mjs";
@@ -140,16 +141,16 @@ test("credential reuse stays inside Pi and never enters generated source",async(
 });
 test("independent fixture checks reject a broken solution, accept repair and reject tampered tests",t=>{
  const root=temporary(t),fixture=FIXTURES.find(f=>f.id==="seeded-repair"),cwd=join(root,"fixture");
- prepareFixture(fixture,cwd);
+ const protectedFiles=prepareFixture(fixture,cwd);
  const metrics={exitCode:0,failure:null,settled:true,truncated:0,providerErrors:0};
- assert.equal(verifyFixture(fixture,cwd,metrics).passed,false);
+ assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles).passed,false);
  writeFileSync(join(cwd,"sum.mjs"),"export const sum = values => values.reduce((a,b)=>a+b,0);");
- assert.equal(verifyFixture(fixture,cwd,metrics).passed,true);
+ assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles).passed,true);
  writeFileSync(join(cwd,"sum.mjs"),"export const sum = () => 0; process.exit(0);\n");
- assert.equal(verifyFixture(fixture,cwd,metrics).passed,false,"An exit before the outcome check passed");
+ assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles).passed,false,"An exit before the outcome check passed");
  writeFileSync(join(cwd,"sum.mjs"),'console.log("# Subtest: sum"); console.log(JSON.stringify({type:"test:pass",name:"sum"})); process.exit(0);\n');
- assert.equal(verifyFixture(fixture,cwd,metrics).passed,false,"Generated stdout spoofed assertion completion");
- writeFileSync(join(cwd,".pamwechete-check.mjs"),"");assert.equal(verifyFixture(fixture,cwd,metrics).reason,"protected_file_changed");
+ assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles).passed,false,"Generated stdout spoofed assertion completion");
+ writeFileSync(join(cwd,".pamwechete-check.mjs"),"");assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles).reason,"protected_file_changed");
 });
 
 test("passing generated code cannot change protected files during verification",t=>{
@@ -160,11 +161,11 @@ test("passing generated code cannot change protected files during verification",
   'writeFileSync(".pamwechete-check.mjs","");',
   'renameSync("sum.mjs","saved.mjs");writeFileSync("sum.mjs",readFileSync("saved.mjs"));'
  ].entries()) {
-  const cwd=join(root,"fixture-"+index);prepareFixture(fixture,cwd);
+  const cwd=join(root,"fixture-"+index);const protectedFiles=prepareFixture(fixture,cwd);
   writeFileSync(join(cwd,"result.json"),'{"average":4}');
   writeFileSync(join(cwd,"average.mjs"),'import {sum} from "./sum.mjs"; import {writeFileSync,renameSync,readFileSync} from "node:fs"; '+mutation+
    ' export const average = values => values.length ? sum(values)/values.length : null;');
-  assert.equal(verifyFixture(fixture,cwd,metrics).reason,"protected_file_changed");
+  assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles).reason,"protected_file_changed");
  }
 });
 
@@ -195,12 +196,42 @@ test("owned cleanup failure leaves a report that is explicitly unverified",async
  assert.equal(report.cleanupVerified,false);assert.equal(report.proxy.requests,0);
 });
 
-test("uncertain process-tree termination stops evaluation before the next fixture",async t=>{
- const evaluation=fabricatedEvaluation(t,["orientation","seeded-repair"]);let started=0;
- await assert.rejects(main(evaluation.args,{runFixture:async()=>{started++;return {...completedMetrics(),failure:"termination_failed"};}}),/termination was not established/);
+test("uncertain termination closes the proxy before verification or another fixture",async t=>{
+ const loopbackFetch=globalThis.fetch,marker=join(temporary(t),"verifier-ran");
+ const evaluation=fabricatedEvaluation(t,["seeded-repair","multi-step-create"]);let started=0,lateRequest;
+ await assert.rejects(main(evaluation.args,{runFixture:async({cwd,extraArgs})=>{
+  started++;
+  writeFileSync(join(cwd,"sum.mjs"),'import {writeFileSync} from "node:fs"; writeFileSync('+JSON.stringify(marker)+',"ran"); export const sum=values=>values.reduce((a,b)=>a+b,0);');
+  const routing=readFileSync(extraArgs[extraArgs.indexOf("--extension")+1],"utf8");
+  const endpoint=routing.match(/http:\/\/127\.0\.0\.1:\d+\/v1/)[0];
+  lateRequest=new Promise(resolve=>setImmediate(async()=>{
+   try {
+    const response=await loopbackFetch(endpoint+"/chat/completions",{method:"POST",headers:{Authorization:"Bearer synthetic","Content-Type":"application/json"},
+     body:JSON.stringify({model:snapshot().models.find(m=>m.key==="qwen38-trohrbaugh").id,stream:true,max_tokens:1})});
+    await response.text();resolve("accepted");
+   } catch { resolve("closed"); }
+  }));
+  return {...completedMetrics(),failure:"termination_failed"};
+ }}),/termination was not established/);
+ assert.equal(await lateRequest,"closed");assert.equal(existsSync(marker),false,"The independent verifier ran after termination failed");
  const report=JSON.parse(readFileSync(evaluation.out,"utf8"));
- assert.equal(started,1);assert.equal(report.runs.length,1);assert.equal(report.runs[0].passed,false);
+ assert.equal(started,1);assert.equal(report.runs.length,0,"Termination failure must leave an incomplete case set");
  assert.equal(report.proxy.requests,0);assert.equal(report.cleanupVerified,true);
+});
+
+test("protected identity captured before the model check rejects a one-time replacement",async t=>{
+ const evaluation=fabricatedEvaluation(t,["multi-step-create"]);
+ const report=await main(evaluation.args,{runFixture:async({cwd})=>{
+  writeFileSync(join(cwd,"result.json"),'{"average":4}');
+  writeFileSync(join(cwd,"average.mjs"),'import {sum} from "./sum.mjs"; import {existsSync,renameSync,readFileSync,writeFileSync} from "node:fs"; '+
+   'if(!existsSync("replaced")){renameSync("sum.mjs","original-sum.mjs");writeFileSync("sum.mjs",readFileSync("original-sum.mjs"));writeFileSync("replaced","once");} '+
+   'export const average=values=>values.length?sum(values)/values.length:null;');
+  const check=spawnSync(process.execPath,["--test",".pamwechete-check.mjs"],{cwd,env:cleanEnvironment(join(cwd,"unused-agent-dir")),encoding:"utf8",timeout:10000,windowsHide:true});
+  assert.equal(check.status,0,check.stderr);
+  return completedMetrics();
+ }});
+ assert.equal(report.runs[0].passed,false);assert.equal(report.runs[0].reason,"protected_file_changed");
+ assert.equal(report.cleanupVerified,true);assert.equal(report.proxy.requests,0);
 });
 
 for(const rerun of [false,true]) test("failed-check recovery requires a successful later check: "+rerun,async t=>{
@@ -321,13 +352,13 @@ const solutions = {
  "multi-step-create": { "average.mjs": "import {sum} from './sum.mjs'; export const average = values => values.length ? sum(values)/values.length : null;\n", "result.json": '{"average":4}\n' }
 };
 for (const fixture of FIXTURES) test("fixture controls: " + fixture.id,t=>{
- const cwd=join(temporary(t),"fixture");prepareFixture(fixture,cwd);
+ const cwd=join(temporary(t),"fixture");const protectedFiles=prepareFixture(fixture,cwd);
  const metrics={exitCode:0,failure:null,settled:true,truncated:0,providerErrors:0};
- assert.equal(verifyFixture(fixture,cwd,metrics).passed,false,"An unfinished fixture passed");
+ assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles).passed,false,"An unfinished fixture passed");
  for(const [name,text] of Object.entries(solutions[fixture.id])) writeFileSync(join(cwd,name),text);
  const observed={question:true,failedCheck:true,successfulCheck:true};
- assert.equal(verifyFixture(fixture,cwd,metrics,observed).passed,true,"A correct fixture failed");
- assert.equal(verifyFixture(fixture,cwd,{...metrics,truncated:1},observed).passed,false,"Truncated agent output passed");
+ assert.equal(verifyFixture(fixture,cwd,metrics,protectedFiles,observed).passed,true,"A correct fixture failed");
+ assert.equal(verifyFixture(fixture,cwd,{...metrics,truncated:1},protectedFiles,observed).passed,false,"Truncated agent output passed");
 });
 test("negative, non-finite and absent usage remain unknown",()=>{
  for(const usage of [{input:-1,output:3},{input:1,output:2,cacheRead:NaN},{input:1,output:0,cacheWrite:-1},undefined]) {

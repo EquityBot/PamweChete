@@ -38,20 +38,20 @@ export function prepareFixture(fixture, cwd) {
  for (const [name, text] of Object.entries({ ...fixture.files, ".pamwechete-check.mjs": fixture.check })) {
   const file = join(cwd, name); mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text);
  }
+ return Object.freeze(Object.entries({ ...fixture.files, ".pamwechete-check.mjs": fixture.check })
+  .filter(([name]) => !fixture.writes.includes(name)).map(([name, text]) => {
+   const stat = lstatSync(join(cwd, name));
+   return Object.freeze({ name, text, dev: stat.dev, ino: stat.ino });
+  }));
 }
 
-export function verifyFixture(fixture, cwd, metrics, observed = {}) {
- const protectedFiles = Object.entries({ ...fixture.files, ".pamwechete-check.mjs": fixture.check })
-  .filter(([name]) => !fixture.writes.includes(name));
- const identities = new Map();
+export function verifyFixture(fixture, cwd, metrics, protectedFiles, observed = {}) {
  const preserved = () => {
   try {
-   return protectedFiles.every(([name, text]) => {
-    const file = join(cwd, name), stat = lstatSync(file), previous = identities.get(name);
+   return protectedFiles.every(({ name, text, dev, ino }) => {
+    const file = join(cwd, name), stat = lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink() || readFileSync(file, "utf8") !== text) return false;
-    if (previous && (stat.dev !== previous.dev || stat.ino !== previous.ino)) return false;
-    identities.set(name, { dev: stat.dev, ino: stat.ino });
-    return true;
+    return stat.dev === dev && stat.ino === ino;
    });
   } catch { return false; }
  };

@@ -78,7 +78,7 @@ export async function main(args = process.argv.slice(2), { createWorkspace = tem
      save(); continue;
     }
     const cwd = join(root, fixture.id + "-" + repetition);
-    prepareFixture(fixture, cwd);
+    const protectedFiles = prepareFixture(fixture, cwd);
     const guard = join(root, fixture.id + "-" + repetition + "-guard.mjs");
     writeFileSync(guard, guardSource(fixture, cwd));
     const observed = { question: false, failedCheck: false, successfulCheck: false, changedBeforeFailure: false }, checks = new Set();
@@ -96,14 +96,14 @@ export async function main(args = process.argv.slice(2), { createWorkspace = tem
        else if (observed.failedCheck) observed.successfulCheck = true;
       }
      } });
+    assert.notEqual(metrics.failure, "termination_failed", "Pi process-tree termination was not established");
     let verdict;
-    try { verdict = verifyFixture(fixture, cwd, metrics, observed); }
+    try { verdict = verifyFixture(fixture, cwd, metrics, protectedFiles, observed); }
     catch { verdict = { passed: false, reason: "fixture_verification_error" }; }
     const estimatedUsageUsd = metrics.usageKnown ? ((metrics.inputTokens + metrics.cacheReadTokens + metrics.cacheWriteTokens) * model.metadata.pricing.input +
      metrics.outputTokens * model.metadata.pricing.output) / 1_000_000 : null;
     report.runs.push({ fixture: fixture.id, repetition, ...verdict, metrics, estimatedUsageUsd });
     save();
-    assert.notEqual(metrics.failure, "termination_failed", "Pi process-tree termination was not established");
    }
   }
  } finally {
