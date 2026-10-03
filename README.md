@@ -25,12 +25,22 @@ Amos Blomqvist keeps several of his extensions in their own repositories, which 
 
 This repo contains everything else.
 
-## Featherless Qwen coding profile
+## Featherless model selection
 
-[`profiles/featherless-qwen38/`](profiles/featherless-qwen38/) is a tested Windows profile for
-`featherless/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU`. It includes a compact coding agreement,
-deterministic sampling defaults, prompt templates, a benchmark-selected tool surface and a
-structural verifier.
+[`profiles/featherless/`](profiles/featherless/) screens models from
+[Abliterlitics](https://abliterlitics.dev/) for use through Featherless. Its catalogue
+records exact IDs, dated provider limits, prices and experimental request settings.
+All six entries are candidates. Ryan supplied the DavidAU entry as his current
+baseline on 26 September 2026. There is no qualified default.
+
+The workflow validates and stages a fresh profile, checks public provider metadata,
+and prepares repeated Pi coding fixtures with independent outcome checks and spending
+limits. Live runs are explicit; the default benchmark command only prints a plan.
+See the [setup and evaluation guide](profiles/featherless/README.md).
+
+[`profiles/featherless-qwen38/`](profiles/featherless-qwen38/) remains a historical
+example for the same DavidAU model. Its older settings and benchmark figures do not
+qualify the current workflow or the other candidates.
 
 Credentials do not belong in this repository. Keep the Featherless key only in Pi's private
 `~/.pi/agent/auth.json` store; never add it to `models.json`, settings, examples or documentation.

@@ -1,5 +1,11 @@
 # Featherless Qwen3.8 coding profile
 
+This is a historical example, retained with its original benchmark observations.
+Ryan supplied the DavidAU model below as his current baseline on 26 September 2026.
+Use the
+[model catalogue and evaluation workflow](../featherless/README.md) for new selection
+work. No candidate in that catalogue inherits this profile's live benchmark results.
+
 This profile configures Pi for `DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU` through Featherless's OpenAI-compatible Chat Completions endpoint. It favours deterministic tool use, a small tool surface, explicit verification and bounded retries.
 
 ## What is selected

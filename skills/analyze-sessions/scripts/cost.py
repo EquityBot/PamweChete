@@ -12,7 +12,9 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -32,9 +34,20 @@ def main() -> int:
     p.add_argument("--show-subagents", action="store_true",
                    help="Also print a row with the subagent share for each group.")
     p.add_argument("--json", action="store_true", help="Emit JSON instead of a table.")
+    p.add_argument("--benchmark-report", action="append", type=Path, default=[],
+                   help="Read an explicit qualification JSON report instead of local sessions; repeat for comparison.")
     # Subagents are INCLUDED by default for cost so the totals reflect real spend.
     S.add_filter_args(p, subagents_default=True)
     args = p.parse_args()
+
+    if args.benchmark_report:
+        try:
+            rows = benchmark_reports(args.benchmark_report)
+        except (OSError, ValueError, KeyError, TypeError):
+            print("Invalid qualification report; session storage was not read.", file=sys.stderr)
+            return 1
+        print(json.dumps(rows, indent=2))
+        return 0
 
     # Default to last 7 days if no date filter given.
     if not args.since and not args.until and not args.session:
@@ -72,6 +85,132 @@ def main() -> int:
 # ---------------------------------------------------------------------------
 # Grouping
 # ---------------------------------------------------------------------------
+
+
+def benchmark_reports(paths) -> list[dict]:
+    """Aggregate explicit qualification reports without scanning session storage."""
+    from statistics import median
+    groups = {}
+    seen = set()
+
+    def number(value, integer=False):
+        if type(value) not in (int, float) or not 0 <= value <= 2**53 - 1:
+            raise ValueError("Invalid qualification metric")
+        if integer and type(value) is not int:
+            raise ValueError("Expected a count")
+        return value
+
+    for path in paths:
+        with path.open("rb") as source:
+            content = source.read(5 * 1024 * 1024 + 1)
+        if len(content) > 5 * 1024 * 1024:
+            raise ValueError("Qualification report is too large")
+        report = json.loads(content)
+        if not isinstance(report, dict) or type(report.get("schemaVersion")) is not int or report["schemaVersion"] not in (1, 2, 3) or report.get("kind") != "live":
+            raise ValueError("Expected a live qualification report")
+        for field in ("runId", "modelId", "requestDigest", "fixtureDigest", "piVersion", "resourcesDigest", "harnessDigest"):
+            if not isinstance(report[field], str) or not report[field] or len(report[field]) > 256:
+                raise ValueError("Missing qualification identity")
+        if not isinstance(report["runs"], list) or not report["runs"]:
+            raise ValueError("Qualification report has no runs")
+        identity = (report["runId"], report["modelId"])
+        if identity in seen:
+            raise ValueError("Duplicate qualification run")
+        seen.add(identity)
+        runtime = report.get("runtime")
+        if report["schemaVersion"] >= 2:
+            if report.get("runtimeVerified") is not True:
+                raise ValueError("Runtime was not verified after the evaluation")
+            fields = ("schemaVersion", "packageName", "version", "entryPoint", "codeDigest", "fileCount",
+                      "sourceRevision", "nodeVersion", "platform", "arch")
+            if not isinstance(runtime, dict) or set(runtime) != {*fields, "digest"}:
+                raise ValueError("Missing runtime fingerprint")
+            for field in ("packageName", "version", "entryPoint", "nodeVersion", "platform", "arch"):
+                if not isinstance(runtime[field], str) or not runtime[field] or len(runtime[field]) > 256:
+                    raise ValueError("Invalid runtime identity")
+            for field in ("codeDigest", "digest"):
+                if not isinstance(runtime[field], str) or not re.fullmatch(r"[a-f0-9]{64}", runtime[field]):
+                    raise ValueError("Invalid runtime digest")
+            if type(runtime["schemaVersion"]) is not int or runtime["schemaVersion"] != 1 or runtime["version"] != report["piVersion"]:
+                raise ValueError("Runtime version differs")
+            if number(runtime["fileCount"], integer=True) < 1:
+                raise ValueError("Empty runtime fingerprint")
+            if runtime["sourceRevision"] is not None and (not isinstance(runtime["sourceRevision"], str) or not re.fullmatch(r"[a-fA-F0-9]{40}", runtime["sourceRevision"])):
+                raise ValueError("Invalid source revision")
+            encoded = json.dumps({field: runtime[field] for field in fields}, separators=(",", ":"), ensure_ascii=False)
+            if hashlib.sha256(encoded.encode("utf-8")).hexdigest() != runtime["digest"]:
+                raise ValueError("Runtime fingerprint changed")
+            if report["schemaVersion"] == 3:
+                if report.get("executionVerified") is not True:
+                    raise ValueError("Configuration was not verified after the evaluation")
+                runtime_key = ("fingerprinted", runtime["digest"])
+            else:
+                runtime_key = ("configuration-unverified", report["runId"])
+        else:
+            # A legacy version string cannot establish that two runs used the same build.
+            runtime = None
+            runtime_key = ("legacy-unverified", report["runId"])
+        fixtures = report["plan"].get("fixtures", [])
+        if not isinstance(fixtures, list) or any(not isinstance(item, str) or not re.fullmatch(r"[a-z][a-z-]{0,63}", item) for item in fixtures) or len(set(fixtures)) != len(fixtures):
+            raise ValueError("Invalid fixture selection")
+        if report["schemaVersion"] >= 2 and not fixtures:
+            raise ValueError("Missing fixture selection")
+        expected_cases = None
+        if report["schemaVersion"] == 3:
+            repeats = number(report["plan"].get("repeats"), integer=True)
+            if not 1 <= repeats <= 10:
+                raise ValueError("Invalid fixture repetition count")
+            expected_cases = {(fixture, repetition) for fixture in fixtures
+                              for repetition in range(1, repeats + 1)}
+        context = number(report["plan"]["contextWindow"], integer=True)
+        key = (report["modelId"], report["requestDigest"], report["fixtureDigest"], report["piVersion"],
+               context, report["resourcesDigest"], report["harnessDigest"], json.dumps(report["profileFiles"], sort_keys=True), runtime_key, tuple(sorted(fixtures)))
+        group = groups.setdefault(key, {
+            "model": key[0], "request_digest": key[1], "fixture_digest": key[2], "pi_version": key[3],
+            "context_window": context, "resources_digest": key[5], "harness_digest": key[6], "profile_files": report["profileFiles"],
+            "runtime_status": runtime_key[0], "runtime": runtime,
+            "fixtures": sorted(fixtures),
+            "runs": 0, "passed": 0, "skipped": 0, "tool_errors": 0, "repeated_calls": 0,
+            "retries": 0, "truncated": 0, "estimated_usage_usd": 0.0, "elapsed_ms": [],
+        })
+        cases = set()
+        for run in report["runs"]:
+            if not isinstance(run, dict) or type(run.get("passed")) is not bool or type(run.get("skipped", False)) is not bool:
+                raise ValueError("Invalid run outcome")
+            case = (run["fixture"], number(run["repetition"], integer=True))
+            if expected_cases is not None and case not in expected_cases:
+                raise ValueError("Run is outside the declared fixture plan")
+            if case in cases or (run["passed"] and run.get("skipped")):
+                raise ValueError("Duplicate or contradictory run")
+            cases.add(case)
+            group["runs"] += 1
+            group["passed"] += run["passed"] is True
+            group["skipped"] += run.get("skipped") is True
+            metrics = run.get("metrics") or {}
+            if not isinstance(metrics, dict):
+                raise ValueError("Invalid metrics")
+            for target, source in (("tool_errors", "toolErrors"), ("repeated_calls", "repeatedCalls"),
+                                   ("retries", "retries"), ("truncated", "truncated")):
+                group[target] += number(metrics.get(source, 0), integer=True)
+            amount = run.get("estimatedUsageUsd")
+            if amount is None:
+                group["estimated_usage_usd"] = None
+            else:
+                number(amount)
+                if group["estimated_usage_usd"] is not None:
+                    group["estimated_usage_usd"] += amount
+            if metrics.get("elapsedMs") is not None:
+                elapsed = number(metrics["elapsedMs"])
+                if run["passed"]:
+                    group["elapsed_ms"].append(elapsed)
+        if expected_cases is not None and cases != expected_cases:
+            raise ValueError("Qualification report does not cover the declared fixture plan")
+    result = []
+    for group in groups.values():
+        elapsed = group.pop("elapsed_ms")
+        group["median_elapsed_ms"] = median(elapsed) if elapsed else None
+        result.append(group)
+    return sorted(result, key=lambda row: (-row["passed"] / max(row["runs"], 1), row["model"]))
 
 
 def session_keys(s: S.SessionSummary, by: str):

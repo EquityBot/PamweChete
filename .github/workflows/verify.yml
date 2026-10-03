@@ -15,7 +15,11 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,13 +32,17 @@ jobs:
         with:
           python-version: "3.14"
       - name: Test skill regressions
-        run: python -m unittest tests.test_skill_regressions
+        run: python -m unittest tests.test_skill_regressions tests.test_featherless_reports
       - name: Test extension boundaries
         run: node --experimental-vm-modules --test tests/extension-boundaries.test.mjs
       - name: Verify Featherless Qwen profile
         run: node scripts/verify-featherless-qwen-profile.mjs profiles/featherless-qwen38
       - name: Test the profile verifier
         run: node --test tests/verify-featherless-qwen-profile.test.mjs
+      - name: Validate the Featherless catalogue
+        run: node scripts/featherless-profile.mjs validate
+      - name: Test the qualification workflow
+        run: node --experimental-vm-modules --test tests/featherless-workflow.test.mjs
       - name: Install bash-guard dependencies
         working-directory: extensions/bash-guard
         run: npm ci --ignore-scripts
@@ -47,3 +55,21 @@ jobs:
       - name: Test RTK output compression
         working-directory: extensions/rtk
         run: npm test
+      - name: Install the pinned Pi integration runtime
+        run: npm install --prefix "${{ runner.temp }}/pi-smoke" --ignore-scripts --no-audit --no-fund @earendil-works/pi-coding-agent@0.87.1
+      - name: Test native Pi tools through the local budget proxy
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
+      - name: Test Pi capacity retry
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" retry
+      - name: Test Pi truncation handling
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" truncated
+      - name: Test Pi missing finish reason handling
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" missing-finish
+      - name: Test explicit credential-store reuse with fabricated data
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" stored-auth
+      - name: Test Pi compaction and session resume
+        run: node scripts/featherless-session-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" compaction
+      - name: Test Pi context pressure and session resume
+        run: node scripts/featherless-session-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" pressure
+      - name: Test Pi interrupted tools and session resume
+        run: node scripts/featherless-session-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" interrupted-tool

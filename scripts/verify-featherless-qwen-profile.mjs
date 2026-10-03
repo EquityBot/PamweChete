@@ -24,7 +24,7 @@ function readJson(path, label) {
 	}
 }
 
-function rejectCredentialMaterial(value, location = "configuration") {
+export function rejectCredentialMaterial(value, location = "configuration") {
 	if (Array.isArray(value)) {
 		for (const item of value) rejectCredentialMaterial(item, location);
 		return;
@@ -201,7 +201,7 @@ export function verifyProfile(profileDirectory) {
 	validateSettings(settings, profile);
 }
 
-function safeMessage(error) {
+export function safeMessage(error) {
 	const message = error instanceof Error ? error.message : "unknown verification failure";
 	return message.replace(KEY_LIKE_PATTERN, "[REDACTED]");
 }
