@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const INDEX_PATH = join(HERE, "..", "index.ts");
-const PINNED_HOOK_SHA256 = "2280aa9c32900362a13adf314f0b9253a2b463bd9b5b2d5b20833ac4a5d31c76";
+const PINNED_HOOK_SHA256 = "1ce1bee849472954eff6bda492ac39c2ae5d0645ee1ecf262b721541fc61a1fe";
 
 const rtkModule = await import("../index.ts").catch(() => ({}));
 
@@ -108,14 +110,18 @@ test("RTK_DISABLED bypasses rewriting without disabling the version probe", { co
 	}
 });
 
-test("an RTK version older than rewrite support registers no handler", { concurrency: false }, async () => {
-	const { value: { calls, handlers }, warnings } = await captureWarnings(() => loadExtension({
-		version: { code: 0, stdout: "rtk 0.22.9\n", stderr: "", killed: false },
-	}));
+test("an RTK version older than the pinned release registers no handler", { concurrency: false }, async (context) => {
+	for (const stdout of ["rtk 0.22.9\n", "rtk 0.45.9\n"]) {
+		await context.test(stdout.trim(), async () => {
+			const { value: { calls, handlers }, warnings } = await captureWarnings(() => loadExtension({
+				version: { code: 0, stdout, stderr: "", killed: false },
+			}));
 
-	assert.deepEqual([...handlers.keys()], []);
-	assert.equal(calls.length, 1);
-	assert.match(warnings.join("\n"), /too old/i);
+			assert.deepEqual([...handlers.keys()], []);
+			assert.equal(calls.length, 1);
+			assert.match(warnings.join("\n"), /too old \(need >= 0\.46\.0\)/i);
+		});
+	}
 });
 
 test("a missing RTK binary registers no handler", { concurrency: false }, async () => {
@@ -125,4 +131,45 @@ test("a missing RTK binary registers no handler", { concurrency: false }, async 
 
 	assert.deepEqual([...handlers.keys()], []);
 	assert.match(warnings.join("\n"), /not found/i);
+});
+
+// Drives the hook with a real rtk binary. CI installs the pinned release and sets
+// RTK_CONTRACT_BIN; locally, point it at any rtk build to check that build's contract.
+const CONTRACT_BIN = process.env.RTK_CONTRACT_BIN;
+
+test("the hook keeps its contract with a real rtk binary", { concurrency: false, skip: CONTRACT_BIN ? false : "RTK_CONTRACT_BIN is not set" }, async () => {
+	const home = mkdtempSync(join(tmpdir(), "rtk-contract-"));
+	const env = {
+		...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"),
+		XDG_DATA_HOME: join(home, ".local", "share"), APPDATA: join(home, "AppData", "Roaming"), LOCALAPPDATA: join(home, "AppData", "Local"),
+	};
+	delete env.RTK_DISABLED;
+	const handlers = new Map();
+	const pi = {
+		async exec(_command, args, options) {
+			const run = spawnSync(CONTRACT_BIN, args, { env, encoding: "utf8", timeout: options?.timeout });
+			return { code: run.status ?? -1, stdout: run.stdout ?? "", stderr: run.stderr ?? "", killed: run.signal !== null };
+		},
+		on(name, handler) {
+			handlers.set(name, handler);
+		},
+	};
+	await extensionFactory()(pi);
+	assert.equal(handlers.has("tool_call"), true, "the real rtk version was rejected");
+
+	async function hook(command) {
+		const event = { toolName: "bash", input: { command } };
+		await handlers.get("tool_call")(event, { signal: new AbortController().signal });
+		return event.input.command;
+	}
+
+	assert.equal(await hook("git status --short"), "rtk git status --short");
+	assert.equal(await hook('git log --format="%h %s" -3'), 'rtk git log --format="%h %s" -3');
+	assert.equal(await hook("cd sub && git status"), "cd sub && rtk git status");
+	assert.equal(await hook("FOO=1 git status"), "FOO=1 rtk git status");
+	for (const unchanged of ["echo hello", "cat <<'EOF'\nhi\nEOF", "rm -rf build", "rtk git status"]) {
+		assert.equal(await hook(unchanged), unchanged);
+	}
+	// 0.46.0 passes a pipeline through; later releases rewrite its first command.
+	assert.ok(["git status | head -5", "rtk git status | head -5"].includes(await hook("git status | head -5")));
 });
