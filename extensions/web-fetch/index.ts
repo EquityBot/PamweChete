@@ -169,7 +169,7 @@ function extractRSCContent(
 	type Node = unknown;
 	const visitedRefs = new Set<string>();
 
-	function extractNode(node: Node, ctx = { inCode: false }): string {
+	function extractNode(node: Node, inCode = false): string {
 		if (node === null || node === undefined) return "";
 		if (typeof node === "string") {
 			const refMatch = node.match(/^\$L([0-9a-f]+)$/i);
@@ -178,12 +178,12 @@ function extractRSCContent(
 				if (visitedRefs.has(refId)) return "";
 				visitedRefs.add(refId);
 				const refNode = getParsedChunk(refId);
-				const result = refNode ? extractNode(refNode, ctx) : "";
+				const result = refNode ? extractNode(refNode, inCode) : "";
 				visitedRefs.delete(refId);
 				return result;
 			}
 			if (
-				!ctx.inCode &&
+				!inCode &&
 				(node === "$undefined" ||
 					node === "$" ||
 					/^\$[A-Z]/.test(node))
@@ -212,16 +212,16 @@ function extractRSCContent(
 				visitedRefs.add(refId);
 				const refNode = getParsedChunk(refId);
 				let result = "";
-				if (refNode) result = extractNode(refNode, ctx);
+				if (refNode) result = extractNode(refNode, inCode);
 				else if (props.children)
-					result = extractNode(props.children as Node, ctx);
+					result = extractNode(props.children as Node, inCode);
 				visitedRefs.delete(refId);
 				return result;
 			}
 
 			const children = props.children;
 			const content = children
-				? extractNode(children as Node, ctx)
+				? extractNode(children as Node, inCode)
 				: "";
 
 			switch (tag) {
@@ -234,13 +234,13 @@ function extractRSCContent(
 				case "p": return `${content.trim()}\n\n`;
 				case "code": {
 					const cc = children
-						? extractNode(children as Node, { inCode: true })
+						? extractNode(children as Node, true)
 						: "";
-					return ctx.inCode ? cc : `\`${cc}\``;
+					return inCode ? cc : `\`${cc}\``;
 				}
 				case "pre": {
 					const pc = children
-						? extractNode(children as Node, { inCode: true })
+						? extractNode(children as Node, true)
 						: "";
 					return "```\n" + pc + "\n```\n\n";
 				}
@@ -259,7 +259,7 @@ function extractRSCContent(
 			}
 		}
 
-		return (node as Node[]).map((n) => extractNode(n, ctx)).join("");
+		return (node as Node[]).map((n) => extractNode(n, inCode)).join("");
 	}
 
 	const mainChunk = getParsedChunk("23");

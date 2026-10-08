@@ -9,10 +9,10 @@ This directory maintains a local adaptation of the thin Pi hook from [rtk-ai/rtk
 - Source path: `hooks/pi/rtk.ts`
 - Release commit: `8dae5a750fe307d1fee105a2ff4a9d1ca54ac791`
 - Release source SHA-256: `d278508809a5379e506384eabb19e17a672806c4eac7eabc1cd634699aea8c33`
-- Local source SHA-256 (LF): `c950133ef54561f0af4b42ebfbc5a19c882bfe260c689b78c73ef0ae9a54dcfe`
+- Local source SHA-256 (LF): `62811959e9c981408cb9488ed3ba4702ad0e8cd8ec3c3cf2c8546c4fff1998a5`
 - Licence: Apache-2.0; the upstream licence is included as `LICENSE`.
 
-`index.ts` replaces the release source's runtime type-guard import with a local guard and type-only imports. It is maintained in this repository; its LF-normalised digest and observable behaviour are checked locally. The local adaptation also uses `Number.parseInt` for version parsing, which is the same native function as `parseInt`. Rewrite rules stay in RTK itself rather than being copied into this configuration.
+`index.ts` replaces the release source's runtime type-guard import with a local guard and type-only imports. It is maintained in this repository; its LF-normalised digest and observable behaviour are checked locally. The local adaptation also uses `Number.parseInt` for version parsing, which is the same native function as `parseInt`. Version matching starts only at the beginning of a digit run, avoiding repeated attempts within long digit strings. Rewrite rules stay in RTK itself rather than being copied into this configuration.
 
 ## Runtime contract
 

@@ -184,7 +184,7 @@ function parseObservedFunctionLeafMarkup(text: string, allowedTools: Set<string>
 		return undefined;
 	}
 	const body = outer[2];
-	const leaf = /\s*<([A-Za-z_][A-Za-z0-9_-]*)>\s*([^<>]*?)\s*<\/\1>/gy;
+	const leaf = /\s*<([A-Za-z_][A-Za-z0-9_-]*)>\s*([^<>]*?)\s*<\/\1>/y;
 	const argumentsValue: Record<string, unknown> = {};
 	let offset = 0;
 	while (offset < body.length) {

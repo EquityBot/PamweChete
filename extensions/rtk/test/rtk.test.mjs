@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const INDEX_PATH = join(HERE, "..", "index.ts");
-const PINNED_HOOK_SHA256 = "c950133ef54561f0af4b42ebfbc5a19c882bfe260c689b78c73ef0ae9a54dcfe";
+const PINNED_HOOK_SHA256 = "62811959e9c981408cb9488ed3ba4702ad0e8cd8ec3c3cf2c8546c4fff1998a5";
 
 const rtkModule = await import("../index.ts").catch(() => ({}));
 

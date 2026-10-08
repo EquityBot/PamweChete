@@ -31,7 +31,7 @@ function isBashToolCallEvent(event: ToolCallEvent): event is BashToolCallEvent {
 
 // Parse "X.Y.Z" semver, return [major, minor, patch] or null.
 function parseSemver(raw: string): [number, number, number] | null {
-  const m = raw.trim().match(/(\d+)\.(\d+)\.(\d+)/)
+  const m = raw.trim().match(/(?<!\d)(\d+)\.(\d+)\.(\d+)/)
   if (!m) return null
   return [Number.parseInt(m[1], 10), Number.parseInt(m[2], 10), Number.parseInt(m[3], 10)]
 }
