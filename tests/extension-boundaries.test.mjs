@@ -29,6 +29,46 @@ async function load(relative, extraExports, overrides = {}, mocks = {}) {
 	return module.namespace;
 }
 
+test("HTML tag stripping preserves empty and unclosed tags", async () => {
+	const module = await load("../extensions/web-fetch/index.ts", "stripHtmlTags,isLikelyJSRendered");
+	for (const [input, expected] of [
+		["plain > text", "plain > text"],
+		["<>text<>", "<>text<>"],
+		["<b>text</b><unfinished", "text<unfinished"],
+		["<<b>>tail", ">tail"],
+		["<\n>text", "text"],
+		["<".repeat(50_000), "<".repeat(50_000)],
+		["<".repeat(50_000) + ">", ""],
+	]) assert.equal(module.stripHtmlTags(input), expected);
+	assert.equal(module.isLikelyJSRendered("<script></script>".repeat(4) + "<body>short</body>"), true);
+	assert.equal(module.isLikelyJSRendered("<script></script>".repeat(4) + "<body>" + "<".repeat(50_000) + "</body>"), false);
+});
+
+test("site normalisation preserves long invalid input and trims slash runs", async () => {
+	const module = await load("../extensions/web-search/index.ts", "normalizeSite");
+	const invalid = "/".repeat(50_000) + "%";
+	assert.equal(module.normalizeSite(invalid), invalid);
+	assert.equal(module.normalizeSite("%" + "/".repeat(50_000)), "%");
+});
+
+test("snippet metadata preserves leading separators and rejects embedded separators", async () => {
+	const unused = () => { throw new Error("UI is outside this test"); };
+	const module = await load("../extensions/prompt-snippets/index.ts", "parseSnippet", {}, {
+		"@earendil-works/pi-tui": { Key: {}, matchesKey: unused, truncateToWidth: unused, wrapTextWithAnsi: unused },
+	});
+	for (const [value, expected] of [
+		["\u2028Synthetic", "Synthetic"],
+		["trailing\u2029", "sample"],
+		["first\u2028second", "sample"],
+		[" ".repeat(50_000) + "first\u2029second", "sample"],
+	]) {
+		const parsed = module.parseSnippet("sample.md", `---\nname: ${value}\nplacement: append\norder: 2\n---\nSynthetic body`);
+		assert.equal(parsed.name, expected);
+		assert.equal(parsed.placement, "append");
+		assert.equal(parsed.order, 2);
+	}
+});
+
 test("streamed bodies enforce the limit without trusting Content-Length", async () => {
 	for (const contentType of ["text/plain", "application/pdf"]) {
 		for (const length of [undefined, "1"]) {

@@ -314,13 +314,29 @@ function extractRSCContent(
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+function stripHtmlTags(html: string): string {
+	const parts: string[] = [];
+	let start = 0;
+	let open = html.indexOf("<");
+	while (open !== -1) {
+		const close = html.indexOf(">", open + 1);
+		if (close === -1) break;
+		if (close > open + 1) {
+			parts.push(html.slice(start, open));
+			start = close + 1;
+		}
+		open = html.indexOf("<", close + 1);
+	}
+	parts.push(html.slice(start));
+	return parts.join("");
+}
+
 function isLikelyJSRendered(html: string): boolean {
 	const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
 	if (!bodyMatch) return false;
-	const textContent = bodyMatch[1]
+	const textContent = stripHtmlTags(bodyMatch[1]
 		.replace(/<script[\s\S]*?<\/script>/gi, "")
-		.replace(/<style[\s\S]*?<\/style>/gi, "")
-		.replace(/<[^>]+>/g, "")
+		.replace(/<style[\s\S]*?<\/style>/gi, ""))
 		.replace(/\s+/g, " ")
 		.trim();
 	const scriptCount = (html.match(/<script/gi) || []).length;

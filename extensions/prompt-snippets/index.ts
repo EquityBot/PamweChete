@@ -41,7 +41,7 @@ function parseSnippet(filename: string, raw: string): Snippet | null {
 
 	const meta: Record<string, string> = {};
 	for (const line of match[1].split(/\r?\n/)) {
-		const kv = line.match(/^([A-Za-z][\w-]*)\s*:\s*(.*)$/);
+		const kv = line.match(/^([A-Za-z][\w-]*)\s*:(\s*(?:\S.*)?)$/);
 		if (kv) meta[kv[1].toLowerCase()] = kv[2].trim().replace(/^["']|["']$/g, "");
 	}
 

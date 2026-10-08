@@ -122,7 +122,7 @@ function normalizeSite(site?: string): string | undefined {
 		if (url.hostname) value = url.hostname;
 	} catch {}
 
-	return value.replace(/\/+$/, "") || undefined;
+	return value.replace(/(?<!\/)\/+$/, "") || undefined;
 }
 
 function quoteForSearch(value: string): string {
