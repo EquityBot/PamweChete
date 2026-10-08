@@ -286,7 +286,7 @@ function extractRSCContent(
 			!text.includes("404")
 		) {
 			contentParts.push({
-				order: parseInt(id, 16),
+				order: Number.parseInt(id, 16),
 				text: text.trim(),
 			});
 		}
@@ -536,7 +536,7 @@ async function extractViaHttp(
 		const maxSize = isPDFContent ? MAX_PDF_SIZE : MAX_RESPONSE_SIZE;
 
 		if (contentLengthHeader) {
-			const contentLength = parseInt(contentLengthHeader, 10);
+			const contentLength = Number.parseInt(contentLengthHeader, 10);
 			if (contentLength > maxSize) {
 				controller.abort();
 				return {

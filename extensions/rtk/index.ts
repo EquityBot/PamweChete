@@ -33,7 +33,7 @@ function isBashToolCallEvent(event: ToolCallEvent): event is BashToolCallEvent {
 function parseSemver(raw: string): [number, number, number] | null {
   const m = raw.trim().match(/(\d+)\.(\d+)\.(\d+)/)
   if (!m) return null
-  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)]
+  return [Number.parseInt(m[1], 10), Number.parseInt(m[2], 10), Number.parseInt(m[3], 10)]
 }
 
 // Calls `rtk rewrite`; returns the rewritten command or null (pass through).
