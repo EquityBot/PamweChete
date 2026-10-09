@@ -11,6 +11,7 @@ This is not meant to be installed as one big package. Browse the repo and copy t
 Most of the extensions and skills here, and the shape of this README, started as Amos Blomqvist's [pi-config](https://github.com/amosblomqvist/pi-config). That work remains his. He walks through the original setup in [My Pi Setup After 6 Months](https://www.youtube.com/@EeroAlvar) and its predecessor [Pi Coding Agent Setup After 2 Months](https://www.youtube.com/watch?v=DWWrLlM3gwQ), on the channel that `assets/thumbnail.png` links to.
 
 [![video](assets/thumbnail.png)](https://www.youtube.com/@EeroAlvar)
+[![Verify](https://github.com/ryanduguid/PamweChete/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/ryanduguid/PamweChete/actions/workflows/verify.yml)
 
 `amosblomqvist/pi-config` publishes no licence file, so there is no upstream licence for this repository to carry, and none is asserted on his behalf here. The derived parts are redistributed on the same unstated terms as upstream; nothing in this repository re-licenses them. Anyone wanting clear terms should ask Amos Blomqvist. This repository stays private.
 
