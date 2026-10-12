@@ -182,66 +182,53 @@ def summarize_session(path: Path) -> Optional[SessionSummary]:
     s.is_subagent = is_subagent_path(path)
     s.parent_session_id = parent_session_id_from_path(path)
 
-    try:
-        f = path.open("r", encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-
     user_chunks: list[str] = []
-    with f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            t = rec.get("type")
-            if t == "session":
-                s.id = rec.get("id", "")
-                s.cwd = rec.get("cwd", "")
-                ts = rec.get("timestamp")
-                if ts:
-                    try:
-                        s.started_at = ts_from_iso(ts)
-                        s.last_at = s.started_at
-                    except ValueError:
-                        pass
-            elif t == "model_change":
-                if rec.get("modelId"):
-                    s.models.add(rec["modelId"])
-                if rec.get("provider"):
-                    s.providers.add(rec["provider"])
-            elif t == "message":
-                m = rec.get("message") or {}
-                role = m.get("role")
-                # Track last timestamp from any message
-                mts = m.get("timestamp")
-                if isinstance(mts, (int, float)):
-                    s.last_at = ts_from_ms(int(mts))
+    for rec in iter_records(path):
+        t = rec.get("type")
+        if t == "session":
+            s.id = rec.get("id", "")
+            s.cwd = rec.get("cwd", "")
+            ts = rec.get("timestamp")
+            if ts:
+                try:
+                    s.started_at = ts_from_iso(ts)
+                    s.last_at = s.started_at
+                except ValueError:
+                    pass
+        elif t == "model_change":
+            if rec.get("modelId"):
+                s.models.add(rec["modelId"])
+            if rec.get("provider"):
+                s.providers.add(rec["provider"])
+        elif t == "message":
+            m = rec.get("message") or {}
+            role = m.get("role")
+            # Track last timestamp from any message
+            mts = m.get("timestamp")
+            if isinstance(mts, (int, float)):
+                s.last_at = ts_from_ms(int(mts))
 
-                if role == "user":
-                    s.user_count += 1
-                    text = _extract_text(m.get("content"))
-                    if text:
-                        if not s.first_user_prompt:
-                            s.first_user_prompt = text
-                        user_chunks.append(text)
-                elif role == "assistant":
-                    s.assistant_count += 1
-                    if m.get("model"):
-                        s.models.add(m["model"])
-                    if m.get("provider"):
-                        s.providers.add(m["provider"])
-                    _accumulate_usage(s, m.get("usage"))
-                    for c in m.get("content") or []:
-                        if c.get("type") == "toolCall":
-                            s.tool_call_count += 1
-                elif role == "toolResult":
-                    s.tool_result_count += 1
-                    if m.get("isError"):
-                        s.error_count += 1
+            if role == "user":
+                s.user_count += 1
+                text = _extract_text(m.get("content"))
+                if text:
+                    if not s.first_user_prompt:
+                        s.first_user_prompt = text
+                    user_chunks.append(text)
+            elif role == "assistant":
+                s.assistant_count += 1
+                if m.get("model"):
+                    s.models.add(m["model"])
+                if m.get("provider"):
+                    s.providers.add(m["provider"])
+                _accumulate_usage(s, m.get("usage"))
+                for c in m.get("content") or []:
+                    if c.get("type") == "toolCall":
+                        s.tool_call_count += 1
+            elif role == "toolResult":
+                s.tool_result_count += 1
+                if m.get("isError"):
+                    s.error_count += 1
 
     if not s.id:
         # No session header - bail.
@@ -251,6 +238,8 @@ def summarize_session(path: Path) -> Optional[SessionSummary]:
 
 
 def _extract_text(content) -> str:
+    if isinstance(content, str):
+        return content
     if not isinstance(content, list):
         return ""
     out = []

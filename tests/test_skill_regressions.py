@@ -3,6 +3,7 @@ import argparse
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills/analyze-sessions/scripts"))
 import cost
 import sessions
+import prompts
 import search
 import show_session
 
@@ -27,6 +29,84 @@ spec.loader.exec_module(transcript)
 
 
 class SkillRegressionTests(unittest.TestCase):
+    def test_summary_and_grep_preserve_string_user_content(self):
+        text = "first\nsecond"
+        for content in (text, [{"type": "text", "text": text}]):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "fabricated.jsonl"
+                records = [{"type": "session", "id": "fabricated"},
+                           {"type": "message", "message": {"role": "user", "content": content}}]
+                raw = "\n".join(json.dumps(record) for record in records) + "\n"
+                path.write_text(raw, encoding="utf-8")
+                summary = sessions.summarize_session(path)
+                self.assertEqual(summary.user_count, 1)
+                self.assertEqual(summary.first_user_prompt, text)
+                self.assertEqual(summary.user_prompt_concat, text)
+                self.assertTrue(sessions.Filters(grep="SECOND").matches(summary))
+                self.assertEqual(path.read_text(encoding="utf-8"), raw)
+
+    def test_prompt_collection_preserves_string_content_and_length_filters(self):
+        text = "first\nsecond"
+        for content in (text, [{"type": "text", "text": text}]):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "fabricated.jsonl"
+                record = {"type": "message", "message": {"role": "user", "content": content,
+                                                       "timestamp": 1000}}
+                raw = json.dumps(record) + "\n"
+                path.write_text(raw, encoding="utf-8")
+                self.assertEqual(prompts._collect_prompts(path, len(text), len(text)),
+                                 [(1000, text)])
+                self.assertEqual(prompts._collect_prompts(path, len(text) - 1, 0), [])
+                self.assertEqual(prompts._collect_prompts(path, 0, len(text) + 1), [])
+                self.assertEqual(path.read_text(encoding="utf-8"), raw)
+
+    def test_search_and_user_renderer_preserve_string_content(self):
+        text = "first\nsecond"
+        pattern = re.compile("first|second")
+        for content in (text, [{"type": "text", "text": text}]):
+            with self.subTest(content=content):
+                message = {"role": "user", "content": content}
+                record = {"type": "message", "message": message}
+                with patch.object(search.S, "iter_records", return_value=iter([record])):
+                    hits = search._search_session(SimpleNamespace(path="fabricated.jsonl"), "user",
+                                                  pattern.search, pattern.finditer, 10, 1, 100)
+                self.assertEqual([hit["line"] for hit in hits], [1, 2])
+                self.assertTrue(all(hit["snippet"] == text for hit in hits))
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    show_session._render_user(message, "12:00")
+                self.assertIn(text, output.getvalue())
+                self.assertNotIn("_(empty)_", output.getvalue())
+
+    def test_session_summary_skips_nonobject_records_and_keeps_later_messages(self):
+        header = '{"type":"session","id":"fabricated","cwd":"/fabricated/project"}'
+        user = '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"fabricated prompt"}]}}'
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "fabricated.jsonl"
+            for invalid in ("null", "[]", '"scalar"', "42", "true"):
+                with self.subTest(record=invalid):
+                    contents = f"{header}\n{user}\n{invalid}\n{user}\n"
+                    path.write_text(contents, encoding="utf-8")
+                    summary = sessions.summarize_session(path)
+                    self.assertEqual(summary.id, "fabricated")
+                    self.assertEqual(summary.user_count, 2)
+                    self.assertEqual(summary.user_prompt_concat,
+                                     "fabricated prompt\nfabricated prompt")
+                    self.assertEqual(path.read_text(encoding="utf-8"), contents)
+
+    def test_nonobject_record_does_not_abort_later_session_summaries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            paths = []
+            for name in ("first", "middle", "last"):
+                path = Path(folder) / f"{name}.jsonl"
+                path.write_text(f'{{"type":"session","id":"{name}"}}\n'
+                                + ("null\n" if name == "middle" else ""),
+                                encoding="utf-8")
+                paths.append(path)
+            with patch.object(sessions, "iter_session_files", return_value=iter(paths)):
+                summaries = sessions.load_summaries(sessions.Filters())
+            self.assertEqual([summary.id for summary in summaries],
+                             ["first", "middle", "last"])
+
     def test_search_and_renderers_keep_only_nonempty_text_blocks_in_order(self):
         content = [None, 7, {"type": "image", "text": "ignored"},
                    {"type": "text", "text": ""}, {"type": "text", "text": "first"},
