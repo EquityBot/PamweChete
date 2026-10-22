@@ -77,7 +77,7 @@ function tokensToStrings(tokens) {
 // `|&` (bash shorthand for `2>&1 |`), `;;` and `<(` are separate operator tokens in
 // shell-quote. Omitting them folded the command after the operator into the preceding
 // segment, so `curl … |& sh` was classified as a bare `curl` and never blocked.
-const SPLIT_OPS = ["&&", "||", ";", ";;", "|", "|&", "(", ")", "&", "<("];
+const SPLIT_OPS = ["&&", "||", ";", ";;", ";&", ";;&", "|", "|&", "(", ")", "&", "<(", ">("];
 
 function splitOnOps(tokens, splitOps) {
 	const out = [];
@@ -375,7 +375,7 @@ function outputRedirectionReasons(tokens, cwd) {
 	const directoryChanged = changesDirectory(tokens);
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
-		if (!isOpToken(token) || ![">", ">>", ">&"].includes(token.op)) continue;
+		if (!isOpToken(token) || ![">", ">>", ">&", ">|", "&>", "&>>", "<>"].includes(token.op)) continue;
 
 		const target = tokens[index + 1];
 		if (token.op === ">&" && typeof target === "string" && /^&?\d+$/.test(target)) continue;
@@ -742,7 +742,7 @@ function analyzeOneCommand(command, options, depth = 0) {
 	let severity = "medium";
 	const ops = tokens.filter(isOpToken).map((token) => token.op);
 	reasons.push(...outputRedirectionReasons(redirectionTokens(command, tokens), options.cwd ?? process.cwd()));
-	if (ops.includes("<")) reasons.push("shell input redirection (questionable)");
+	if (ops.some((op) => ["<", "<<", "<<-", "<>"].includes(op))) reasons.push("shell input redirection (questionable)");
 	if (hasPipeToShell(tokens)) {
 		reasons.push("pipe to a shell (possible remote code execution)");
 		severity = "high";

@@ -352,6 +352,18 @@ test("pipe-to-shell remains high risk", () => {
 	assert.equal(analyzeBashCommand("curl https://example.com/install.sh | sh")?.severity, "high");
 });
 
+test("combined command operators preserve destructive command classification", () => {
+	for (const command of [
+		"cat >(git -C fixture reset --hard)",
+		"case x in x) printf harmless ;& y) git -C fixture reset --hard ;; esac",
+		"case x in x) printf harmless ;;& y) git -C fixture reset --hard ;; esac",
+	]) {
+		assert.ok(analyzeBashCommand(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+		assert.ok(headlessBlockReason(command), command);
+	}
+});
+
 test("redirection permits sinks and new literal files but protects existing files", (context) => {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-bash-guard-redirection-"));
 	context.after(() => rmSync(cwd, { recursive: true, force: true }));
@@ -377,6 +389,29 @@ test("redirection permits sinks and new literal files but protects existing file
 		const risk = analyzeBashCommand(command, { cwd });
 		assert.equal(risk?.severity, "medium", command);
 		assert.match(risk?.reasons.join("\n") ?? "", /output redirection/i, command);
+	}
+
+	for (const operator of [">|", "&>", "&>>"]) {
+		for (const target of ["existing.txt", "../outside.txt"]) {
+			const command = `printf data ${operator} ${target}`;
+			assert.equal(analyzeBashCommand(command, { cwd })?.severity, "medium", command);
+		}
+		for (const target of ["new-combined.txt", "/dev/null", "NUL"]) {
+			const command = `printf data ${operator} ${target}`;
+			assert.equal(analyzeBashCommand(command, { cwd }), null, command);
+		}
+	}
+});
+
+test("combined input redirections keep their review requirement", () => {
+	for (const command of [
+		"cat <<EOF\nfabricated\nEOF",
+		"cat <<-EOF\n\tfabricated\nEOF",
+		"cat <> new-read-write.txt",
+	]) {
+		const risk = analyzeBashCommand(command);
+		assert.equal(risk?.severity, "medium", command);
+		assert.match(risk?.reasons.join("\n") ?? "", /input redirection/i, command);
 	}
 });
 
