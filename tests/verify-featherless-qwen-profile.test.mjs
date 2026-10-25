@@ -21,7 +21,7 @@ function createValidProfile(parent) {
 	const prompts = join(profile, "prompts");
 	mkdirSync(prompts, { recursive: true });
 	writeFileSync(join(profile, "AGENTS.md"), "# Coding agreement\n\nInspect, change, verify, and report.\n");
-	writeFileSync(join(profile, "README.md"), "# Test profile\n");
+	writeFileSync(join(profile, "README.md"), "# Chappie test profile\n");
 	writeFileSync(join(prompts, "implement.md"), "---\ndescription: Implement a scoped task\n---\nImplement $ARGUMENTS.\n");
 	writeFileSync(join(prompts, "verify.md"), "---\ndescription: Verify the current work\n---\nVerify $ARGUMENTS.\n");
 
