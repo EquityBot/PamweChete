@@ -146,7 +146,7 @@ function parseObservedBashMarkup(text: string, allowedTools: Set<string>): Parse
 		return undefined;
 	}
 	const match = text.match(
-		/^<tool_call>\s*<bash>\s*<parameter=command>\s*([\s\S]*?)\s*<\/parameter>\s*<\/function>\s*<\/tool_call>$/,
+		/^<tool_call>\s*<bash>\s*<parameter=command>([\s\S]*?)<\/parameter>\s*<\/function>\s*<\/tool_call>$/,
 	);
 	const command = match?.[1]?.trim();
 	if (!command || /<\/?parameter(?:=|>)|<\/?(?:tool_call|function|bash)>/i.test(command)) {
@@ -177,14 +177,14 @@ function parseObservedFunctionArgsMarkup(text: string, allowedTools: Set<string>
 
 function parseObservedFunctionLeafMarkup(text: string, allowedTools: Set<string>): ParsedToolEnvelope | undefined {
 	const outer = text.match(
-		/^<tool_call>\s*<function=([A-Za-z_][A-Za-z0-9_-]*)>\s*([\s\S]*?)\s*<\/function>\s*<\/tool_call>$/,
+		/^<tool_call>\s*<function=([A-Za-z_][A-Za-z0-9_-]*)>([\s\S]*?)<\/function>\s*<\/tool_call>$/,
 	);
 	const name = outer?.[1];
 	if (!name || !allowedTools.has(name)) {
 		return undefined;
 	}
-	const body = outer[2];
-	const leaf = /\s*<([A-Za-z_][A-Za-z0-9_-]*)>\s*([^<>]*?)\s*<\/\1>/gy;
+	const body = outer[2].trim();
+	const leaf = /\s*<([A-Za-z_][A-Za-z0-9_-]*)>([^<>]*?)<\/\1>/y;
 	const argumentsValue: Record<string, unknown> = {};
 	let offset = 0;
 	while (offset < body.length) {
@@ -234,7 +234,7 @@ function unwrapObservedJsonToolCall(text: string): string | undefined {
 	if (malformedClosers) {
 		return malformedClosers[1].trim();
 	}
-	const standard = text.match(/^<tool_call>\s*([\s\S]*?)\s*<\/tool_call>$/);
+	const standard = text.match(/^<tool_call>([\s\S]*?)<\/tool_call>$/);
 	if (standard) {
 		return standard[1].trim();
 	}

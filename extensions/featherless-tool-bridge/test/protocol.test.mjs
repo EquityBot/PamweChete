@@ -21,6 +21,22 @@ function requiredProtocolExport(name) {
 
 const allowedTools = ["bash", "edit", "read", "write"];
 
+test("wrapper whitespace preserves trimmed values and complete function leaves", () => {
+	for (const space of ["", " ", "\t", "\r\n", "\u00a0", "\ufeff"]) {
+		assert.deepEqual(parseToolEnvelope(
+			`<tool_call>${space}<bash>${space}<parameter=command>${space}printf 'two  spaces'${space}</parameter>${space}</function>${space}</tool_call>`, allowedTools),
+		{ name: "bash", arguments: { command: "printf 'two  spaces'" } });
+		assert.deepEqual(parseToolEnvelope(
+			`<tool_call>${space}<function=read>${space}<path>${space}two  spaces.txt${space}</path>${space}<limit>${space}10${space}</limit>${space}</function>${space}</tool_call>`, allowedTools),
+		{ name: "read", arguments: { path: "two  spaces.txt", limit: "10" } });
+		assert.deepEqual(parseToolEnvelope(
+			`<tool_call>${space}{"tool":"read","args":{"path":"two  spaces.txt"}}${space}</tool_call>`, allowedTools),
+		{ name: "read", arguments: { path: "two  spaces.txt" } });
+		assert.equal(parseToolEnvelope(
+			`<tool_call><function=read><path>${space}</path>${space}</function></tool_call>`, allowedTools), undefined);
+	}
+});
+
 function assistantMessage(overrides = {}) {
 	return {
 		role: "assistant",

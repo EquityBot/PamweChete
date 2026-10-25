@@ -421,6 +421,14 @@ const PS_DATA_VERBS = new Set(["write-output", "write-host", "echo"]);
 const PS_TRIGGERS = new Set([...PS_DELETE_VERBS, ...PS_DISK_VERBS, ...PS_POWER_VERBS, ...WINDOWS_SHELLS]);
 const CMD_TRIGGERS = new Set([...CMD_DELETE_VERBS, "format", ...WINDOWS_SHELLS]);
 
+function stripWindowsGrouping(word) {
+	let start = 0;
+	while (start < word.length && (word[start] === "{" || word[start] === "(")) start += 1;
+	let end = word.length;
+	while (end > start && (word[end - 1] === "}" || word[end - 1] === ")")) end -= 1;
+	return word.slice(start, end);
+}
+
 // Each statement as a word list. Quoted text stays one word, so a verb inside a string is data,
 // not a command. Backslashes become slashes first because shell-quote treats `\` as an escape,
 // which would fuse `Module\Remove-Item` into one name; commandName() then drops the module part.
@@ -434,7 +442,7 @@ function windowsStatements(text) {
 		tokens = text.split(/\s+/);
 	}
 	return splitOnOps(tokens, SPLIT_OPS).map((segment) =>
-		tokensToStrings(segment).map((word) => word.replace(/^[{(]+|[})]+$/g, "")).filter(Boolean));
+		tokensToStrings(segment).map(stripWindowsGrouping).filter(Boolean));
 }
 
 // `/s`, `/S/Q` and the `//s` form Git Bash needs to stop MSYS path conversion.
@@ -800,8 +808,30 @@ export function analyzeBashCommand(command, options = {}) {
 	return uniqueReasons.length === 0 ? null : { severity, reasons: uniqueReasons };
 }
 
+function hasRawRecursiveRm(command) {
+	let eligibleRm = false;
+	for (let index = 0; index < command.length; index += 1) {
+		const char = command[index];
+		if (eligibleRm && /\s/.test(char) && command[index + 1] === "-") {
+			const option = index + 1;
+			if (command.startsWith("--recursive", option) && !/[A-Za-z0-9_]/.test(command[option + 11] ?? "")) return true;
+			for (let flag = option + 1; flag < command.length && /[A-Za-z]/.test(command[flag]); flag += 1) {
+				if (command[flag] === "r" || command[flag] === "R") return true;
+			}
+		}
+		// The old raw matcher permits a newline as the whitespace immediately before a flag.
+		if (char === "#" || char === "\n") eligibleRm = false;
+		if (char !== "r" || command[index + 1] !== "m" || /[A-Za-z0-9_]/.test(command[index - 1] ?? "") || /[A-Za-z0-9_]/.test(command[index + 2] ?? "")) continue;
+		let before = index;
+		while (before > 0 && /\s/.test(command[before - 1])) before -= 1;
+		const followsGit = before >= 3 && before < index && command.slice(before - 3, before) === "git" && !/[A-Za-z0-9_]/.test(command[before - 4] ?? "");
+		if (!followsGit) eligibleRm = true;
+	}
+	return false;
+}
+
 const CATASTROPHIC_BLOCKED = [
-	{ pattern: /(?<!\bgit\s+)\brm\b[^#\n]*\s-(?:[a-zA-Z]*[rR]|-recursive\b)/, reason: "recursive delete (rm -r / -rf / -Rf)" },
+	{ matches: hasRawRecursiveRm, reason: "recursive delete (rm -r / -rf / -Rf)" },
 	{ pattern: /\bfind\b[^#\n]*\s-delete\b/, reason: "bulk deletion (find -delete)" },
 	{ pattern: /\bsudo\b/, reason: "elevated privileges (sudo)" },
 	{ pattern: /\b(curl|wget)\b[^#\n]*\|&?\s*(?:env\s+)?(ba?sh|zsh|fish|dash|sh)\b/, reason: "pipe to shell (remote code execution)" },
@@ -942,7 +972,7 @@ function nestedShellPayloads(segment) {
 	return candidates;
 }
 
-// Parses first, then classifies. The regex list below is kept only as a second net for text the
+// Parses first, then classifies. The raw rules are kept as a second net for text the
 // tokeniser drops.
 function parsedBlockReason(command, headless, depth = 0) {
 	const lines = commandLines(command);
@@ -985,8 +1015,8 @@ function findBlockedReason(command, rules) {
 	const normalizedCommand = command.replace(
 		/(^|(?:&&|\|\||[;|])\s*)rtk(?:\.exe)?(?:\s+(?!-[hV]\b|--(?:help|version)\b)-[\w-]+)*\s+(?:(?:proxy|err|test|summary|run)\s+)?git\b/gi,
 		"$1git");
-	for (const { pattern, reason } of rules) {
-		if (pattern.test(normalizedCommand)) return reason;
+	for (const rule of rules) {
+		if ("matches" in rule ? rule.matches(normalizedCommand) : rule.pattern.test(normalizedCommand)) return rule.reason;
 	}
 	return null;
 }

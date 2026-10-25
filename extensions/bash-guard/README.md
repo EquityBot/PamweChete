@@ -87,6 +87,9 @@ Auto-discovered from `~/.pi/agent/extensions/bash-guard/`. Run `/reload` in pi.
 
 - Scope: `bash` tool calls only (`write`/`edit` and user `!` commands are not intercepted).
 - Policy behaviour is covered by `npm test` in this directory.
+- Ryan's policy API is `analyzeBashCommand`, `headlessBlockReason` and
+  `disabledModeBlockReason`. The exported rule arrays are internal data; their
+  entries can use either a regex or a predicate.
 - Interactive confirmation fails closed after 120 seconds; a timed-out command is blocked and remembered like an explicit abort.
 - RTK-prefixed Git commands receive the same classification as their direct Git equivalents.
 - `--bash-guard-auto-allow`: main-session flag that allows flagged commands when there is no UI

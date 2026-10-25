@@ -8,7 +8,50 @@ import {
 	analyzeBashCommand,
 	disabledModeBlockReason,
 	headlessBlockReason,
+	HEADLESS_BLOCKED,
 } from "../policy.ts";
+
+test("raw recursive deletion retains boundaries, Git exclusions and option forms", () => {
+	const matches = HEADLESS_BLOCKED[0].matches;
+	const blocked = [
+		"rm -r", "rm -Rf", "rm -fooRbar", "rm -r9", "rm -recursive",
+		"rm --recursive", "rm --recursive=1", "rm --recursive-extra",
+		"Git rm -r", "xgit rm -r", "agit rm -r", "_git rm -r", "git; rm -r",
+		"rm x\n-r", "rm x\r\n-r", "rm x\u2028-r", "rm x\u2029-r",
+		"# rm -r", "rm x # rm -r", "rm x git rm -r", "git rm x rm -r",
+		"printf 'rm -rf build'", 'echo "rm -r data"', "é rm -r", "rmé -r",
+	];
+	const allowed = [
+		"rm -foo", "rm -123r", "rm --r", "rm --recursiveX", "rm --recursive_", "rm --recursive9",
+		"git rm -r", "git\trm -r", "git\nrm -r", "/usr/bin/git rm -r", ".git rm -r", "-git rm -r",
+		"rm x# -r", "rm x\n -r", "arm -r", "rm_ -r", "_rm -r", "rm9 -r",
+	];
+	for (let repeat = 0; repeat < 3; repeat += 1) {
+		for (const command of blocked) assert.equal(matches(command), true, command);
+		for (const command of allowed) assert.equal(matches(command), false, command);
+	}
+});
+
+test("raw command data remains blocked in every classifier", () => {
+	const reason = "recursive delete (rm -r / -rf / -Rf)";
+	for (const command of ["printf 'rm -rf build'", 'echo "rm -r data"', "# rm -rf build", "rtk proxy printf 'rm -rf build'"]) {
+		assert.deepEqual(analyzeBashCommand(command), { severity: "high", reasons: [reason] }, command);
+		assert.equal(headlessBlockReason(command), reason, command);
+		assert.equal(disabledModeBlockReason(command), reason, command);
+	}
+});
+
+test("Windows grouping keeps each classifier's existing token boundaries", () => {
+	const reason = "recursive delete (cmd rd /s)";
+	assert.deepEqual(analyzeBashCommand("cmd /c {{rd /s C:/build}}"), { severity: "high", reasons: [reason] });
+	assert.equal(headlessBlockReason("cmd /c {{rd /s C:/build}}"), reason);
+	assert.equal(disabledModeBlockReason("cmd /c {{rd /s C:/build}}"), reason);
+	for (const command of ["cmd /c ((rd /s C:/build))", "cmd /c (((echo safe)))", "powershell -Command ((Remove-Item -Recurse C:/build))"]) {
+		assert.equal(analyzeBashCommand(command), null, command);
+		assert.equal(headlessBlockReason(command), null, command);
+		assert.equal(disabledModeBlockReason(command), null, command);
+	}
+});
 
 test("known wrappers preserve the underlying command classification", () => {
 	for (const command of ["git commit -m update", "git diff --output=report.patch"]) {

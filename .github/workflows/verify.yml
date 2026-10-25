@@ -15,7 +15,11 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,13 +33,17 @@ jobs:
           python-version: "3.15"
           allow-prereleases: true
       - name: Test skill regressions
-        run: python -m unittest tests.test_skill_regressions
+        run: python -m unittest tests.test_skill_regressions tests.test_featherless_reports
       - name: Test extension boundaries
         run: node --experimental-vm-modules --test tests/extension-boundaries.test.mjs
       - name: Verify Featherless Qwen profile
         run: node scripts/verify-featherless-qwen-profile.mjs profiles/featherless-qwen38
       - name: Test the profile verifier
         run: node --test tests/verify-featherless-qwen-profile.test.mjs
+      - name: Validate the Featherless catalogue
+        run: node scripts/featherless-profile.mjs validate
+      - name: Test the qualification workflow
+        run: node --experimental-vm-modules --test tests/featherless-workflow.test.mjs
       - name: Install bash-guard dependencies
         working-directory: extensions/bash-guard
         run: npm ci --ignore-scripts
@@ -45,6 +53,39 @@ jobs:
       - name: Test Featherless tool bridge
         working-directory: extensions/featherless-tool-bridge
         run: npm test
+      - name: Install the pinned RTK release
+        if: runner.os == 'Linux'
+        env:
+          RTK_URL: https://github.com/rtk-ai/rtk/releases/download/v0.46.0/rtk-x86_64-unknown-linux-musl.tar.gz
+          RTK_SHA256: 79aa5b89c69566bbfeceb66c8a27cfbe52237fc7ee3e683115f43745a3262d21
+        run: |
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/rtk.tar.gz" "$RTK_URL"
+          echo "$RTK_SHA256  $RUNNER_TEMP/rtk.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/rtk-bin"
+          tar -xzf "$RUNNER_TEMP/rtk.tar.gz" -C "$RUNNER_TEMP/rtk-bin"
+          "$RUNNER_TEMP/rtk-bin/rtk" --version
       - name: Test RTK output compression
         working-directory: extensions/rtk
+        env:
+          RTK_CONTRACT_BIN: ${{ runner.os == 'Linux' && format('{0}/rtk-bin/rtk', runner.temp) || '' }}
         run: npm test
+      - name: Install the pinned Pi integration runtime
+        run: npm install --prefix "${{ runner.temp }}/pi-smoke" --ignore-scripts --no-audit --no-fund @earendil-works/pi-coding-agent@0.87.1
+      - name: Test native Pi tools through the local budget proxy
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
+      - name: Test Pi capacity retry
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" retry
+      - name: Test Pi excessive retry delay refusal
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" retry-limit
+      - name: Test Pi truncation handling
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" truncated
+      - name: Test Pi missing finish reason handling
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" missing-finish
+      - name: Test explicit credential-store reuse with fabricated data
+        run: node scripts/featherless-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" stored-auth
+      - name: Test Pi compaction and session resume
+        run: node scripts/featherless-session-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" compaction
+      - name: Test Pi context pressure and session resume
+        run: node scripts/featherless-session-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" pressure
+      - name: Test Pi interrupted tools and session resume
+        run: node scripts/featherless-session-smoke.mjs "${{ runner.temp }}/pi-smoke/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" interrupted-tool

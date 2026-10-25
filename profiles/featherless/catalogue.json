@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "defaultModel": null,
+  "piVersion": "0.87.1",
+  "models": [
+    {
+      "key": "qwen38-davidau-baseline",
+      "id": "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NM-DAU",
+      "status": "candidate",
+      "source": {
+        "url": "https://abliterlitics.dev/models/qwen38-27b/",
+        "checkedAt": "2026-09-26",
+        "revision": null
+      },
+      "metadata": {
+        "checkedAt": "2026-09-26",
+        "status": "active",
+        "contextLength": 32768,
+        "maxCompletionTokens": 32768,
+        "toolUse": true,
+        "pricing": { "input": 1.6, "output": 12, "cacheRead": null, "cacheWrite": null }
+      },
+      "request": {
+        "contextWindow": 32768,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": ["text"],
+        "samplingParams": { "temperature": 0, "repetition_penalty": 1.15 },
+        "compat": {
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "supportsFinishReason": true,
+          "maxTokensField": "max_tokens",
+          "requiresToolResultName": true,
+          "supportsStrictMode": false
+        }
+      },
+      "qualification": null
+    },
+    {
+      "key": "qwen38-trohrbaugh",
+      "id": "trohrbaugh/Qwen3.8-27B-heretic-ara",
+      "status": "candidate",
+      "source": {
+        "url": "https://abliterlitics.dev/models/qwen38-27b/",
+        "checkedAt": "2026-09-26",
+        "revision": null
+      },
+      "metadata": {
+        "checkedAt": "2026-09-26",
+        "status": "active",
+        "contextLength": 32768,
+        "maxCompletionTokens": 32768,
+        "toolUse": true,
+        "pricing": {
+          "input": 1.6,
+          "output": 12,
+          "cacheRead": null,
+          "cacheWrite": null
+        }
+      },
+      "request": {
+        "contextWindow": 32768,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "samplingParams": {
+          "temperature": 0,
+          "repetition_penalty": 1.15
+        },
+        "compat": {
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "supportsFinishReason": true,
+          "maxTokensField": "max_tokens",
+          "requiresToolResultName": true,
+          "supportsStrictMode": false
+        }
+      },
+      "qualification": null
+    },
+    {
+      "key": "qwen38-coder3101",
+      "id": "coder3101/Qwen3.8-27B-heretic",
+      "status": "candidate",
+      "source": {
+        "url": "https://abliterlitics.dev/models/qwen38-27b/",
+        "checkedAt": "2026-09-26",
+        "revision": null
+      },
+      "metadata": {
+        "checkedAt": "2026-09-26",
+        "status": "active",
+        "contextLength": 32768,
+        "maxCompletionTokens": 32768,
+        "toolUse": true,
+        "pricing": {
+          "input": 1.6,
+          "output": 12,
+          "cacheRead": null,
+          "cacheWrite": null
+        }
+      },
+      "request": {
+        "contextWindow": 32768,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "samplingParams": {
+          "temperature": 0,
+          "repetition_penalty": 1.15
+        },
+        "compat": {
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "supportsFinishReason": true,
+          "maxTokensField": "max_tokens",
+          "requiresToolResultName": true,
+          "supportsStrictMode": false
+        }
+      },
+      "qualification": null
+    },
+    {
+      "key": "gemma4-trevorjs",
+      "id": "TrevorJS/gemma-4-12B-it-uncensored",
+      "status": "candidate",
+      "source": {
+        "url": "https://abliterlitics.dev/models/gemma4-12b/",
+        "checkedAt": "2026-09-26",
+        "revision": null
+      },
+      "metadata": {
+        "checkedAt": "2026-09-26",
+        "status": "active",
+        "contextLength": 32768,
+        "maxCompletionTokens": 32768,
+        "toolUse": true,
+        "pricing": {
+          "input": 1.2,
+          "output": 4.8,
+          "cacheRead": null,
+          "cacheWrite": null
+        }
+      },
+      "request": {
+        "contextWindow": 32768,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "samplingParams": {
+          "temperature": 0,
+          "repetition_penalty": 1.15
+        },
+        "compat": {
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "supportsFinishReason": true,
+          "maxTokensField": "max_tokens",
+          "requiresToolResultName": true,
+          "supportsStrictMode": false
+        }
+      },
+      "qualification": null
+    },
+    {
+      "key": "qwen38-huihui",
+      "id": "huihui-ai/Huihui-Qwen3.8-27B-abliterated",
+      "status": "candidate",
+      "source": {
+        "url": "https://abliterlitics.dev/models/qwen38-27b/",
+        "checkedAt": "2026-09-26",
+        "revision": null
+      },
+      "metadata": {
+        "checkedAt": "2026-09-26",
+        "status": "active",
+        "contextLength": 32768,
+        "maxCompletionTokens": 32768,
+        "toolUse": true,
+        "pricing": {
+          "input": 1.6,
+          "output": 12,
+          "cacheRead": null,
+          "cacheWrite": null
+        }
+      },
+      "request": {
+        "contextWindow": 32768,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "samplingParams": {
+          "temperature": 0,
+          "repetition_penalty": 1.15
+        },
+        "compat": {
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "supportsFinishReason": true,
+          "maxTokensField": "max_tokens",
+          "requiresToolResultName": true,
+          "supportsStrictMode": false
+        }
+      },
+      "qualification": null
+    },
+    {
+      "key": "qwen36-heretic",
+      "id": "llmfan46/Qwen3.6-27B-uncensored-heretic-v2",
+      "status": "candidate",
+      "source": {
+        "url": "https://abliterlitics.dev/models/qwen3.6-27b/",
+        "checkedAt": "2026-09-26",
+        "revision": null
+      },
+      "metadata": {
+        "checkedAt": "2026-09-26",
+        "status": "active",
+        "contextLength": 32768,
+        "maxCompletionTokens": 32768,
+        "toolUse": true,
+        "pricing": {
+          "input": 1.6,
+          "output": 12,
+          "cacheRead": null,
+          "cacheWrite": null
+        }
+      },
+      "request": {
+        "contextWindow": 32768,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "samplingParams": {
+          "temperature": 0,
+          "repetition_penalty": 1.15
+        },
+        "compat": {
+          "supportsDeveloperRole": false,
+          "supportsReasoningEffort": false,
+          "supportsFinishReason": true,
+          "maxTokensField": "max_tokens",
+          "requiresToolResultName": true,
+          "supportsStrictMode": false
+        }
+      },
+      "qualification": null
+    }
+  ]
+}

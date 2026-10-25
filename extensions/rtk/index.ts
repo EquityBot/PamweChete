@@ -1,5 +1,5 @@
 // RTK Pi extension - rewrites bash commands to use rtk for token savings.
-// Requires: rtk >= 0.23.0 in PATH.
+// Requires: rtk >= 0.46.0 in PATH (the release this profile pins and tests).
 //
 // This is a thin delegating extension: all rewrite logic lives in `rtk rewrite`,
 // which is the single source of truth (src/discover/registry.rs).
@@ -17,7 +17,7 @@ import type {
 } from "@earendil-works/pi-coding-agent"
 
 const REWRITE_TIMEOUT_MS = 2_000
-const MIN_SUPPORTED_RTK_MINOR = 23
+const MIN_SUPPORTED_RTK_MINOR = 46
 
 // Local reimplementation of the package's `isToolCallEventType("bash", event)` type
 // guard. That helper is a value export, so importing it pulls in the whole
@@ -31,9 +31,9 @@ function isBashToolCallEvent(event: ToolCallEvent): event is BashToolCallEvent {
 
 // Parse "X.Y.Z" semver, return [major, minor, patch] or null.
 function parseSemver(raw: string): [number, number, number] | null {
-  const m = raw.trim().match(/(\d+)\.(\d+)\.(\d+)/)
+  const m = raw.trim().match(/(?<!\d)(\d+)\.(\d+)\.(\d+)/)
   if (!m) return null
-  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)]
+  return [Number.parseInt(m[1], 10), Number.parseInt(m[2], 10), Number.parseInt(m[3], 10)]
 }
 
 // Calls `rtk rewrite`; returns the rewritten command or null (pass through).
@@ -59,12 +59,12 @@ export default async function (pi: ExtensionAPI) {
     return
   }
 
-  // Warn and bail if rtk predates 0.23.0 (when `rtk rewrite` was introduced).
+  // Warn and bail if rtk predates 0.46.0, the pinned release whose rewrite contract is tested.
   const parsed = parseSemver(ver.stdout.replace(/^rtk\s+/, ""))
   if (parsed) {
     const [major, minor] = parsed
     if (major === 0 && minor < MIN_SUPPORTED_RTK_MINOR) {
-      console.warn(`[rtk] rtk ${ver.stdout.trim()} is too old (need >= 0.23.0) — extension disabled`)
+      console.warn(`[rtk] rtk ${ver.stdout.trim()} is too old (need >= 0.46.0) — extension disabled`)
       return
     }
   }

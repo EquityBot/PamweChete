@@ -169,7 +169,7 @@ function extractRSCContent(
 	type Node = unknown;
 	const visitedRefs = new Set<string>();
 
-	function extractNode(node: Node, ctx = { inCode: false }): string {
+	function extractNode(node: Node, inCode = false): string {
 		if (node === null || node === undefined) return "";
 		if (typeof node === "string") {
 			const refMatch = node.match(/^\$L([0-9a-f]+)$/i);
@@ -178,12 +178,12 @@ function extractRSCContent(
 				if (visitedRefs.has(refId)) return "";
 				visitedRefs.add(refId);
 				const refNode = getParsedChunk(refId);
-				const result = refNode ? extractNode(refNode, ctx) : "";
+				const result = refNode ? extractNode(refNode, inCode) : "";
 				visitedRefs.delete(refId);
 				return result;
 			}
 			if (
-				!ctx.inCode &&
+				!inCode &&
 				(node === "$undefined" ||
 					node === "$" ||
 					/^\$[A-Z]/.test(node))
@@ -212,16 +212,16 @@ function extractRSCContent(
 				visitedRefs.add(refId);
 				const refNode = getParsedChunk(refId);
 				let result = "";
-				if (refNode) result = extractNode(refNode, ctx);
+				if (refNode) result = extractNode(refNode, inCode);
 				else if (props.children)
-					result = extractNode(props.children as Node, ctx);
+					result = extractNode(props.children as Node, inCode);
 				visitedRefs.delete(refId);
 				return result;
 			}
 
 			const children = props.children;
 			const content = children
-				? extractNode(children as Node, ctx)
+				? extractNode(children as Node, inCode)
 				: "";
 
 			switch (tag) {
@@ -234,13 +234,13 @@ function extractRSCContent(
 				case "p": return `${content.trim()}\n\n`;
 				case "code": {
 					const cc = children
-						? extractNode(children as Node, { inCode: true })
+						? extractNode(children as Node, true)
 						: "";
-					return ctx.inCode ? cc : `\`${cc}\``;
+					return inCode ? cc : `\`${cc}\``;
 				}
 				case "pre": {
 					const pc = children
-						? extractNode(children as Node, { inCode: true })
+						? extractNode(children as Node, true)
 						: "";
 					return "```\n" + pc + "\n```\n\n";
 				}
@@ -259,7 +259,7 @@ function extractRSCContent(
 			}
 		}
 
-		return (node as Node[]).map((n) => extractNode(n, ctx)).join("");
+		return (node as Node[]).map((n) => extractNode(n, inCode)).join("");
 	}
 
 	const mainChunk = getParsedChunk("23");
@@ -286,7 +286,7 @@ function extractRSCContent(
 			!text.includes("404")
 		) {
 			contentParts.push({
-				order: parseInt(id, 16),
+				order: Number.parseInt(id, 16),
 				text: text.trim(),
 			});
 		}
@@ -314,13 +314,29 @@ function extractRSCContent(
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+function stripHtmlTags(html: string): string {
+	const parts: string[] = [];
+	let start = 0;
+	let open = html.indexOf("<");
+	while (open !== -1) {
+		const close = html.indexOf(">", open + 1);
+		if (close === -1) break;
+		if (close > open + 1) {
+			parts.push(html.slice(start, open));
+			start = close + 1;
+		}
+		open = html.indexOf("<", close + 1);
+	}
+	parts.push(html.slice(start));
+	return parts.join("");
+}
+
 function isLikelyJSRendered(html: string): boolean {
 	const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
 	if (!bodyMatch) return false;
-	const textContent = bodyMatch[1]
+	const textContent = stripHtmlTags(bodyMatch[1]
 		.replace(/<script[\s\S]*?<\/script>/gi, "")
-		.replace(/<style[\s\S]*?<\/style>/gi, "")
-		.replace(/<[^>]+>/g, "")
+		.replace(/<style[\s\S]*?<\/style>/gi, ""))
 		.replace(/\s+/g, " ")
 		.trim();
 	const scriptCount = (html.match(/<script/gi) || []).length;
@@ -536,7 +552,7 @@ async function extractViaHttp(
 		const maxSize = isPDFContent ? MAX_PDF_SIZE : MAX_RESPONSE_SIZE;
 
 		if (contentLengthHeader) {
-			const contentLength = parseInt(contentLengthHeader, 10);
+			const contentLength = Number.parseInt(contentLengthHeader, 10);
 			if (contentLength > maxSize) {
 				controller.abort();
 				return {
