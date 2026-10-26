@@ -338,8 +338,12 @@ test("RTK run keeps explicit commands after unknown flags and option terminators
 	}
 });
 
+// The raw net blocks catastrophic Git text wherever it appears, data included, so these
+// fixtures use a command only the parser classifies.
+const PARSED_ONLY_GIT = "git -c core.pager=fixture log";
+
 test("RTK run does not execute command-like positional data when -c wins", () => {
-	const data = "git -C fixture clean -f";
+	const data = PARSED_ONLY_GIT;
 	for (const command of [
 		`rtk run echo -c '${data}'`,
 		`rtk run echo --command='${data}'`,
@@ -358,7 +362,7 @@ test("RTK run does not execute command-like positional data when -c wins", () =>
 
 test("RTK run recognises help only while it is still parsing options", () => {
 	for (const flag of ["--help", "-h", "-hc", "-hch"]) {
-		const command = `rtk run -c 'git -C fixture clean -f' ${flag}`;
+		const command = `rtk run -c '${PARSED_ONLY_GIT}' ${flag}`;
 		for (const classify of [analyzeBashCommand, disabledModeBlockReason, headlessBlockReason]) {
 			assert.equal(classify(command), null, command);
 		}
@@ -845,4 +849,177 @@ test("PowerShell subexpressions inside strings are classified as commands", () =
 		assert.ok(disabledModeBlockReason(command), command);
 	}
 	assert.equal(analyzeBashCommand(`pwsh -c 'Write-Output "$(Get-Date)"'`), null);
+});
+
+// The classifiers must see through whatever precedes or wraps a command, and fail closed on
+// what they cannot see through.
+const EVERY_CLASSIFIER = [analyzeBashCommand, headlessBlockReason, disabledModeBlockReason];
+
+test("reserved words and exec wrappers do not hide a catastrophic Git command", () => {
+	const wraps = [
+		(c) => `if true; then ${c}; fi`,
+		(c) => `if ${c}; then echo done; fi`,
+		(c) => `if false; then :; else ${c}; fi`,
+		(c) => `for d in a; do ${c}; done`,
+		(c) => `while true; do ${c}; done`,
+		(c) => `until false; do ${c}; done`,
+		(c) => `! ${c}`,
+		(c) => `exec ${c}`,
+		(c) => `exec -a name ${c}`,
+		(c) => `nice ${c}`,
+		(c) => `nice -n 10 ${c}`,
+		(c) => `nice -5 ${c}`,
+		(c) => `ionice -c3 ${c}`,
+		(c) => `timeout 9 ${c}`,
+		(c) => `timeout -s KILL 5 ${c}`,
+		(c) => `timeout --kill-after=1 5 ${c}`,
+		(c) => `stdbuf -oL ${c}`,
+		(c) => `setsid -w ${c}`,
+		(c) => `taskset -c 0 ${c}`,
+		(c) => `chrt -r 1 ${c}`,
+		(c) => `xargs -I {} ${c}`,
+		(c) => `xargs -0r ${c}`,
+		(c) => `nice timeout 5 ${c}`,
+	];
+	for (const command of ["git -C . reset --hard", "git --no-pager clean -fdx", "git -C a push --force"]) {
+		for (const wrap of wraps) {
+			const wrapped = wrap(command);
+			assert.equal(analyzeBashCommand(wrapped)?.severity, "high", wrapped);
+			assert.ok(headlessBlockReason(wrapped), wrapped);
+			assert.ok(disabledModeBlockReason(wrapped), wrapped);
+		}
+	}
+	assert.equal(headlessBlockReason("timeout 9 git -C . commit -m x"), "git commit (commits are main-session operations)");
+	for (const command of ["if true; then git -C . status; fi", "nice git --no-pager log", "timeout 5 git -C . status", "xargs -I {} git -C {} status"]) {
+		for (const classify of EVERY_CLASSIFIER) assert.equal(classify(command), null, command);
+	}
+});
+
+test("an unrecognised wrapper option fails closed", () => {
+	for (const command of ["nice --frobnicate git status", "timeout -Z 5 git status", "xargs --frobnicate git status"]) {
+		assert.match(analyzeBashCommand(command)?.reasons.join("\n") ?? "", /unrecognised wrapper option/, command);
+		assert.match(headlessBlockReason(command) ?? "", /unrecognised wrapper option/, command);
+		assert.match(disabledModeBlockReason(command) ?? "", /unrecognised wrapper option/, command);
+	}
+});
+
+test("an unrecognised Git global option fails closed instead of hiding the subcommand", () => {
+	for (const command of ["git --frobnicate push --force", "git --frobnicate=x reset --hard", "git --frobnicate status"]) {
+		assert.match(analyzeBashCommand(command)?.reasons.join("\n") ?? "", /unrecognised global option/, command);
+		assert.match(headlessBlockReason(command) ?? "", /unrecognised global option/, command);
+		assert.match(disabledModeBlockReason(command) ?? "", /unrecognised global option/, command);
+	}
+	// --attr-source is a real global option, so the command after it is classified like its bare form.
+	for (const command of ["push --force", "commit -m x", "push", "pull", "reset --hard"]) {
+		assert.ok(headlessBlockReason(`git ${command}`), command);
+		for (const option of ["--attr-source=HEAD", "--attr-source HEAD"]) {
+			assert.equal(headlessBlockReason(`git ${option} ${command}`), headlessBlockReason(`git ${command}`), command);
+			assert.equal(disabledModeBlockReason(`git ${option} ${command}`), disabledModeBlockReason(`git ${command}`), command);
+		}
+	}
+	for (const command of ["git --attr-source=HEAD status", "git --help", "git --version"]) {
+		for (const classify of EVERY_CLASSIFIER) assert.equal(classify(command), null, command);
+	}
+});
+
+test("RTK-prefixed Git is floored like bare Git, whatever its quoting or global options", () => {
+	for (const [wrapped, bare] of [
+		["rtk git 'push' --force", "git push --force"],
+		['rtk git "reset" --hard', "git reset --hard"],
+		["rtk git 'commit' -m x", "git commit -m x"],
+		["rtk git 'push' origin main", "git push origin main"],
+		["rtk git -C . push --force", "git push --force"],
+		["rtk git --no-pager reset --hard", "git reset --hard"],
+		["rtk git -C . commit -m x", "git commit -m x"],
+		["rtk --ultra-compact git 'push' --force", "git push --force"],
+	]) {
+		assert.ok(headlessBlockReason(bare), bare);
+		assert.equal(headlessBlockReason(wrapped), headlessBlockReason(bare), wrapped);
+		assert.equal(disabledModeBlockReason(wrapped), disabledModeBlockReason(bare), wrapped);
+	}
+	for (const classify of EVERY_CLASSIFIER) assert.equal(classify("rtk git -C . status"), null);
+});
+
+test("opaque execution forms fail closed in the floors", () => {
+	for (const [command, reason] of [
+		["exec git -C . push --force", /force/],
+		["timeout 9 git -C . reset --hard", /reset --hard/],
+		['printf %s "git -C . push --force" | sh', /pipe to a shell/],
+		['printf %s "git status" | bash', /pipe to a shell/],
+		["env -S 'git -C . push --force'", /split-string/],
+		["env -S 'git status'", /split-string/],
+		["eval 'git -C . push --force'", /eval/],
+		["eval git -C . reset --hard", /eval/],
+		['eval "$(ssh-agent -s)"', /eval/],
+		['eval "$CMD"', /eval/],
+		["nice eval 'git status'", /eval/],
+	]) {
+		assert.ok(analyzeBashCommand(command), command);
+		assert.match(headlessBlockReason(command) ?? "", reason, command);
+		assert.match(disabledModeBlockReason(command) ?? "", reason, command);
+	}
+	for (const command of ["printf ok | cat", "echo eval"]) {
+		for (const classify of EVERY_CLASSIFIER) assert.equal(classify(command), null, command);
+	}
+});
+
+test("the raw net sees Git global options behind a wrapper the parser does not know", () => {
+	for (const command of ["strace -f git -C . reset --hard", "flock lock git --no-pager push --force", "doas git -c x=y clean -fd"]) {
+		assert.equal(analyzeBashCommand(command)?.severity, "high", command);
+		assert.ok(headlessBlockReason(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+	}
+	assert.ok(headlessBlockReason("strace git -C . commit -m x"));
+	// Beyond the option run the net checks, the command fails closed rather than passing.
+	const longRun = `strace git ${"-C . ".repeat(17)}reset --hard`;
+	assert.ok(headlessBlockReason(longRun));
+	assert.equal(headlessBlockReason(`strace git ${"-C . ".repeat(16)}status`), null);
+});
+
+test("the raw Git net stays linear on long crafted input", () => {
+	const start = performance.now();
+	headlessBlockReason("git -C ".repeat(20000));
+	assert.ok(performance.now() - start < 5000);
+});
+
+test("a redirection before the command or among wrapper options does not hide it", () => {
+	for (const command of [
+		">/dev/null git -C . commit -m x",
+		"2>/dev/null git -C . commit -m x",
+		"2>&1 git commit -m x",
+		"nice >/dev/null git -C . commit -m x",
+		"timeout 5 2>/dev/null git commit -m x",
+		"nice 2>/dev/null -n 5 git commit -m x",
+		"FOO=1 2>/dev/null BAR=2 git commit -m x",
+	]) {
+		assert.deepEqual(analyzeBashCommand(command), analyzeBashCommand("git commit -m x"), command);
+		assert.equal(headlessBlockReason(command), "git commit (commits are main-session operations)", command);
+	}
+	for (const command of ["2>/dev/null git -C . status", "nice >/dev/null git log"]) {
+		for (const classify of EVERY_CLASSIFIER) assert.equal(classify(command), null, command);
+	}
+});
+
+test("a redirection among the command's own arguments does not hide a catastrophic Git command", () => {
+	for (const command of [
+		"git -C . 2>/dev/null reset --hard",
+		"git 2>&1 --no-pager reset --hard",
+		"nice -n >/dev/null 19 git 'reset' --hard",
+		"timeout -s >/dev/null KILL 5 git 'reset' --hard",
+		"rtk 2>/dev/null git 'push' --force",
+		"echo x | nice -n >/dev/null 5 sh",
+	]) {
+		assert.equal(analyzeBashCommand(command)?.severity, "high", command);
+		assert.ok(headlessBlockReason(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+	}
+});
+
+test("a number before a spaced redirection is an argument, not a descriptor", () => {
+	for (const command of ["timeout 5 >/dev/null git 'reset' --hard", "printf id | timeout 5 >/dev/null sh", "timeout 5 2>/dev/null git 'reset' --hard"]) {
+		assert.equal(analyzeBashCommand(command)?.severity, "high", command);
+		assert.ok(headlessBlockReason(command), command);
+		assert.ok(disabledModeBlockReason(command), command);
+	}
+	assert.equal(headlessBlockReason("timeout 5 >/dev/null git status"), null);
 });

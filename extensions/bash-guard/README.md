@@ -44,14 +44,19 @@ Spawned subagents have no UI (stdin is `/dev/null`), so prompting is impossible.
 a focused set of catastrophic/unrecoverable operations is blocked with no user interaction.
 The command is tokenised first and the Git subcommand is identified positionally after the
 global options, so `git -C /other/repo push --force` and `dd if=/dev/zero of="/dev/sda"` are
-classified the same way as their bare forms. The floor is a denylist, so it is best effort
-rather than a guarantee:
+classified the same way as their bare forms. All 3 classifiers share one parser, which also
+looks through shell reserved words (`if … then`, `do`), `rtk git` and the exec wrappers
+`exec`, `nice`, `ionice`, `timeout`, `stdbuf`, `setsid`, `taskset`, `chrt` and `xargs`. What
+it cannot see through fails closed: the interactive mode prompts and the floors block. A raw
+text net also catches catastrophic Git commands, with global options, behind wrappers the
+parser does not know. The floor is a denylist, so it is best effort rather than a guarantee:
 
 | Pattern | Reason |
 |---|---|
 | `rm -r` / `-rf` / `-Rf` | Recursive deletion |
 | `cmd /c rd /s`, `del /s`; PowerShell `Remove-Item -Recurse` | Recursive deletion (Windows) |
-| `powershell -EncodedCommand` | Opaque command that cannot be checked |
+| `powershell -EncodedCommand`, `env -S`, `eval`, any pipe to a shell | Opaque command that cannot be checked |
+| A wrapper option or Git global option the parser does not know | Command that cannot be verified |
 | `cmd /c format`; PowerShell `Format-Volume`, `Clear-Disk` | Disk formatting or wipe (Windows) |
 | `sudo` | Elevated privileges |
 | `curl\|sh`, `wget\|sh` | Pipe to shell (remote code execution) |

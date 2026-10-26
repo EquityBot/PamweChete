@@ -59,12 +59,110 @@ function envExecReason(prefixTokens) {
 }
 
 const ENV_OPTIONS_WITH_VALUES = new Set(["-u", "--unset", "-C", "--chdir"]);
-const ENV_SPLIT_STRING_COMMAND = -1;
-const UNSAFE_TIME_COMMAND = -2;
-const ENV_SPLIT_STRING_PIPE_COMMAND = "env-split-string";
+// commandIndex returns one of these when a wrapper hides the command it runs. Every classifier
+// fails closed on it: the interactive analyser prompts and the floors block.
+const ENV_SPLIT_STRING_COMMAND = { opaque: "env --split-string (opaque command execution)" };
+const UNSAFE_TIME_COMMAND = { opaque: "time output or unsupported options cannot be verified safely" };
+// eval runs text that often exists only at run time (`eval "$(tool init)"`, `eval "$CMD"`), and the
+// tokeniser drops variables, so its payload cannot be checked.
+const EVAL_COMMAND = { opaque: "eval (opaque command execution)" };
+const OPAQUE_PIPE_RECEIVER = "opaque-command";
+
+// Reserved words that can open a simple command inside compound syntax, as in
+// `if true; then git reset --hard; fi`.
+const SHELL_RESERVED_PREFIXES = new Set(["if", "then", "elif", "else", "do", "while", "until", "!"]);
+
+// Wrappers that run their trailing arguments as a command, with their getopt tables: `short` flags,
+// `shortValue` options that take a value (attached or as the next word), `shortAttached` options
+// whose optional value can only be attached, long flags and long value options, and the number of
+// positional arguments before the command (timeout's duration, for example). Each stops parsing
+// options at its first operand. An option outside its table makes the command unlocatable, so it
+// fails closed. Wrappers not listed here are caught only by the raw net in CATASTROPHIC_BLOCKED.
+const EXEC_WRAPPERS = new Map([
+	["exec", { short: "cl", shortValue: "a" }],
+	["nice", { shortValue: "n", longValue: ["adjustment"], numeric: true }],
+	["ionice", { short: "t", shortValue: "cnpPu", longFlag: ["ignore"], longValue: ["class", "classdata", "pid", "pgid", "uid"] }],
+	["timeout", { short: "fpv", shortValue: "ks", longFlag: ["foreground", "preserve-status", "verbose"], longValue: ["kill-after", "signal"], positional: 1 }],
+	["stdbuf", { shortValue: "ioe", longValue: ["input", "output", "error"] }],
+	["setsid", { short: "cfw", longFlag: ["ctty", "fork", "wait"] }],
+	["taskset", { short: "acp", longFlag: ["all-tasks", "cpu-list", "pid"], positional: 1 }],
+	["chrt", {
+		short: "abdefimoprRv", shortValue: "TPD", positional: 1,
+		longFlag: ["all-tasks", "batch", "deadline", "ext", "fifo", "idle", "max", "other", "pid", "rr", "reset-on-fork", "verbose"],
+		longValue: ["sched-runtime", "sched-period", "sched-deadline"],
+	}],
+	["xargs", {
+		short: "0oprtx", shortValue: "adEILnPs", shortAttached: "eil",
+		longFlag: ["null", "open-tty", "interactive", "no-run-if-empty", "verbose", "exit", "eof", "replace", "max-lines"],
+		longValue: ["arg-file", "delimiter", "max-args", "max-procs", "max-chars", "process-slot-var"],
+	}],
+]);
+
+function wrappedCommandIndex(tokens, index, spec) {
+	const wrapper = commandName(tokens[index]);
+	let next = index + 1;
+	while (typeof tokens[next] === "string" && /^-./.test(tokens[next])) {
+		const option = tokens[next++];
+		if (option === "--") break;
+		if (option.startsWith("--")) {
+			const name = option.slice(2).split("=", 1)[0];
+			if (spec.longValue?.includes(name)) {
+				if (!option.includes("=")) next += 1;
+				continue;
+			}
+			if (spec.longFlag?.includes(name)) continue;
+			return { opaque: `${wrapper} ${option} (unrecognised wrapper option; command cannot be verified)` };
+		}
+		if (spec.numeric && /^-\d+$/.test(option)) continue;
+		for (let at = 1; at < option.length; at += 1) {
+			if (spec.short?.includes(option[at])) continue;
+			if (spec.shortValue?.includes(option[at])) {
+				if (at === option.length - 1) next += 1;
+				break;
+			}
+			if (spec.shortAttached?.includes(option[at])) break;
+			return { opaque: `${wrapper} ${option} (unrecognised wrapper option; command cannot be verified)` };
+		}
+	}
+	return commandIndex(tokens, next + (spec.positional ?? 0));
+}
 
 function isOpToken(token) {
 	return typeof token === "object" && token !== null && "op" in token;
+}
+
+// shell-quote emits `2>/dev/null` as "2", { op: ">" }, "/dev/null". A redirection can stand
+// anywhere in a simple command (`git -C . 2>/dev/null reset --hard`, `nice -n >log 19 git`), so a
+// segment is classified without its redirections: each operator, its target and any descriptor
+// number before it are removed, and so is any other operator left in the segment. Output targets
+// are checked separately by outputRedirectionReasons.
+const REDIRECTION_OPS = new Set([">", ">>", ">&", ">|", "&>", "&>>", "<", "<<", "<<-", "<<<", "<>", "<&"]);
+
+// shell-quote drops the spacing that tells the descriptor in `2>/dev/null` from the argument in
+// `timeout 5 >/dev/null`, so a digit run that starts a word and touches `<` or `>` is marked as a
+// descriptor before parsing. Marking inside a quoted string only changes data.
+const DESCRIPTOR_MARK = "__pi_descriptor__";
+
+function parseCommand(command) {
+	return shellParse(command.replace(/(^|[\s;&|()])(\d+)(?=[<>])/g, `$1${DESCRIPTOR_MARK}$2`));
+}
+
+function withoutRedirections(segment) {
+	const words = [];
+	for (let index = 0; index < segment.length; index += 1) {
+		const token = segment[index];
+		if (typeof token === "string" && token.startsWith(DESCRIPTOR_MARK) && REDIRECTION_OPS.has(segment[index + 1]?.op)) continue;
+		if (isOpToken(token)) {
+			if (REDIRECTION_OPS.has(token.op) && typeof segment[index + 1] === "string") index += 1;
+			continue;
+		}
+		words.push(token);
+	}
+	return words;
+}
+
+function commandSegments(tokens) {
+	return splitOnOps(tokens, SPLIT_OPS).map(withoutRedirections);
 }
 
 function tokensToStrings(tokens) {
@@ -104,19 +202,28 @@ function isEnvSplitStringOption(value) {
 	return optionName.length >= 3 && "--split-string".startsWith(optionName);
 }
 
+// The one parser every classifier uses to find the command a segment runs. It looks through
+// assignments, reserved words, `{`, the wrappers above, time, nohup, command, env and `rtk git`,
+// and returns the command's index, null when the segment runs nothing, or an `{ opaque }` reason
+// when a wrapper or eval hides the command. Callers pass a segment from commandSegments.
 function commandIndex(tokens, startIndex = 0) {
 	let index = startIndex;
-	// Skip operators the split list does not consume (a leading redirection, for example) so the
-	// command behind them is still classified instead of the whole segment being dropped.
-	while (index < tokens.length && isOpToken(tokens[index])) {
-		index += 1;
-	}
-	while (index < tokens.length && typeof tokens[index] === "string" && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
+	while (typeof tokens[index] === "string" && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
 		index += 1;
 	}
 	if (typeof tokens[index] !== "string") return null;
-	if (tokens[index] === "{") return commandIndex(tokens, index + 1);
+	if (tokens[index] === "{" || SHELL_RESERVED_PREFIXES.has(tokens[index])) return commandIndex(tokens, index + 1);
 	const wrapper = commandName(tokens[index]);
+	if (wrapper === "eval") return EVAL_COMMAND;
+	if (EXEC_WRAPPERS.has(wrapper)) return wrappedCommandIndex(tokens, index, EXEC_WRAPPERS.get(wrapper));
+	if (wrapper === "rtk") {
+		// rtk git runs git, so classify it as git. rtk's other subcommands are unwrapped by
+		// nestedShellPayloads, which rebuilds the command the way rtk runs it.
+		const args = [];
+		for (let next = index + 1; typeof tokens[next] === "string"; next += 1) args.push(tokens[next]);
+		const at = rtkSubcommandIndex(args);
+		return commandName(args[at] ?? "") === "git" ? index + 1 + at : index;
+	}
 	if (wrapper === "time") {
 		let next = index + 1;
 		let writesOutput = false;
@@ -178,8 +285,8 @@ function anyArgStartsWith(args, prefix) {
 	return args.some((arg) => arg.startsWith(prefix));
 }
 
-const GIT_GLOBAL_VALUE_OPTIONS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env"]);
-const GIT_GLOBAL_VALUE_PREFIX = /^--(?:git-dir|work-tree|namespace|super-prefix|exec-path|config-env)=/;
+const GIT_GLOBAL_VALUE_OPTIONS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"]);
+const GIT_GLOBAL_VALUE_PREFIX = /^--(?:git-dir|work-tree|namespace|super-prefix|exec-path|config-env|attr-source)=/;
 const GIT_GLOBAL_FLAGS = new Set([
 	"--bare", "--no-pager", "--paginate", "-p", "-P", "--exec-path", "--no-replace-objects", "--no-optional-locks",
 	"--no-lazy-fetch", "--no-advice", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs",
@@ -220,6 +327,13 @@ function gitCommandParts(args) {
 		break;
 	}
 	return { globals, subcommand: args[index], subArgs: args.slice(index + 1) };
+}
+
+// gitCommandParts stops at the first argument it does not know as a global option. If that is
+// still an option, the subcommand after it cannot be located, so the command fails closed.
+function gitUnverifiedReason(subcommand) {
+	if (!subcommand?.startsWith("-") || subcommand === "--help" || subcommand === "--version") return null;
+	return `git ${subcommand} (unrecognised global option; subcommand cannot be verified)`;
 }
 
 function gitGlobalExecReason(globals) {
@@ -313,9 +427,10 @@ function isReadOnlyGitCommand(args) {
 }
 
 function firstCommandAfterPipe(tokens, pipeIndex) {
-	const index = commandIndex(tokens, pipeIndex + 1);
-	if (index === ENV_SPLIT_STRING_COMMAND || index === UNSAFE_TIME_COMMAND) return ENV_SPLIT_STRING_PIPE_COMMAND;
-	return index === null ? null : commandName(tokens[index]);
+	const [segment = []] = commandSegments(tokens.slice(pipeIndex + 1));
+	const index = commandIndex(segment);
+	if (index === null) return null;
+	return typeof index === "number" ? commandName(segment[index]) : OPAQUE_PIPE_RECEIVER;
 }
 
 // Both pipe forms feed stdout to the receiver; `|&` also redirects stderr.
@@ -326,7 +441,7 @@ function hasPipeToShell(tokens) {
 	for (let index = 0; index < tokens.length; index += 1) {
 		if (!isOpToken(tokens[index]) || !PIPE_OPS.has(tokens[index].op)) continue;
 		const receiver = firstCommandAfterPipe(tokens, index);
-		if (shells.has(receiver) || receiver === ENV_SPLIT_STRING_PIPE_COMMAND) {
+		if (shells.has(receiver) || receiver === OPAQUE_PIPE_RECEIVER) {
 			return true;
 		}
 	}
@@ -589,27 +704,13 @@ function analyzeSegment(segment) {
 	let severity = "medium";
 	const index = commandIndex(segment);
 	if (index === null) return null;
-	if (index === UNSAFE_TIME_COMMAND) {
-		return { severity, reasons: ["time output or unsupported options require approval"] };
-	}
-	if (index === ENV_SPLIT_STRING_COMMAND) {
-		return { severity, reasons: ["env --split-string (opaque command execution)"] };
-	}
+	if (typeof index !== "number") return { severity, reasons: [index.opaque] };
 
-	let cmd = commandName(segment[index]);
-	let rest = tokensToStrings(segment.slice(index + 1));
+	const cmd = commandName(segment[index]);
+	const rest = tokensToStrings(segment.slice(index + 1));
 
 	const envReason = envExecReason(tokensToStrings(segment.slice(0, index)));
 	if (envReason) reasons.push(envReason);
-
-	// rtk wraps a real command, so classify the wrapped command and keep the git rules below in force.
-	if (cmd === "rtk") {
-		const at = rtkSubcommandIndex(rest);
-		if (commandName(rest[at] ?? "") === "git") {
-			cmd = "git";
-			rest = rest.slice(at + 1);
-		}
-	}
 
 	if (cmd === "sudo") {
 		reasons.push("sudo (elevated privileges)");
@@ -636,7 +737,7 @@ function analyzeSegment(segment) {
 
 	if (cmd === "git") {
 		const { globals, subcommand, subArgs } = gitCommandParts(rest);
-		const execReason = gitGlobalExecReason(globals) ?? gitOptionExecReason(subcommand, subArgs);
+		const execReason = gitGlobalExecReason(globals) ?? gitUnverifiedReason(subcommand) ?? gitOptionExecReason(subcommand, subArgs);
 		if (execReason) reasons.push(execReason);
 		else if (!isReadOnlyGitCommand(rest)) {
 			reasons.push(subcommand ? `git ${subcommand} (repository state change)` : "git (repository command)");
@@ -741,7 +842,7 @@ function commandLines(command) {
 function analyzeOneCommand(command, options, depth = 0) {
 	let tokens;
 	try {
-		tokens = shellParse(command);
+		tokens = parseCommand(command);
 	} catch {
 		return { severity: "medium", reasons: ["unparsed shell command (unable to analyse safely)"] };
 	}
@@ -756,7 +857,7 @@ function analyzeOneCommand(command, options, depth = 0) {
 		severity = "high";
 	}
 
-	for (const segment of splitOnOps(tokens, SPLIT_OPS)) {
+	for (const segment of commandSegments(tokens)) {
 		const segmentRisk = analyzeSegment(segment);
 		if (segmentRisk) {
 			if (segmentRisk.severity === "high") severity = "high";
@@ -830,6 +931,17 @@ function hasRawRecursiveRm(command) {
 	return false;
 }
 
+// The raw net is what catches git behind a wrapper the parser does not know, such as
+// `strace -f git -C repo push --force`, so it allows global options, each with an optional value,
+// between `git` and the subcommand. The run is bounded so a crafted command cannot make matching
+// quadratic, and a longer run fails closed through GIT_OPTION_RUN_LIMIT below.
+const GIT_OPTION = String.raw`\s+-\S+(?:\s+[^-\s;&|#]\S*)?`;
+const GIT_OPTION_RUN_LIMIT = 16;
+
+function gitPattern(subcommand) {
+	return new RegExp(String.raw`\bgit(?:${GIT_OPTION}){0,${GIT_OPTION_RUN_LIMIT}}\s+` + subcommand);
+}
+
 const CATASTROPHIC_BLOCKED = [
 	{ matches: hasRawRecursiveRm, reason: "recursive delete (rm -r / -rf / -Rf)" },
 	{ pattern: /\bfind\b[^#\n]*\s-delete\b/, reason: "bulk deletion (find -delete)" },
@@ -847,25 +959,26 @@ const CATASTROPHIC_BLOCKED = [
 	{ pattern: /\bterraform\s+destroy\b/, reason: "infrastructure teardown (terraform destroy)" },
 	{ pattern: /\bkubectl\s+delete\b/, reason: "Kubernetes resource deletion" },
 	{ pattern: /\baws\s+s3\s+rm\b[^#\n]*--recursive/, reason: "bulk S3 deletion (aws s3 rm --recursive)" },
-	{ pattern: /\bgit\s+push\b[^#\n]*(?:--force(?:-with-lease)?|-f(?:\s|$))/, reason: "git push --force (rewrites remote history)" },
-	{ pattern: /\bgit\s+reset\b[^#\n]*--hard\b/, reason: "discard all uncommitted changes (git reset --hard)" },
-	{ pattern: /\bgit\s+clean\b[^#\n]*-[a-zA-Z]*f/, reason: "delete untracked files (git clean -f)" },
-	{ pattern: /\bgit\s+reflog\s+expire\b/, reason: "expire reflog (removes recovery history)" },
-	{ pattern: /\bgit\s+gc\b[^#\n]*--prune\b/, reason: "prune unreachable objects (git gc --prune)" },
+	{ pattern: gitPattern(String.raw`push\b[^#\n]*(?:--force(?:-with-lease)?|-f(?:\s|$))`), reason: "git push --force (rewrites remote history)" },
+	{ pattern: gitPattern(String.raw`reset\b[^#\n]*--hard\b`), reason: "discard all uncommitted changes (git reset --hard)" },
+	{ pattern: gitPattern(String.raw`clean\b[^#\n]*-[a-zA-Z]*f`), reason: "delete untracked files (git clean -f)" },
+	{ pattern: gitPattern(String.raw`reflog\s+expire\b`), reason: "expire reflog (removes recovery history)" },
+	{ pattern: gitPattern(String.raw`gc\b[^#\n]*--prune\b`), reason: "prune unreachable objects (git gc --prune)" },
+	{ pattern: new RegExp(String.raw`\bgit(?:${GIT_OPTION}){${GIT_OPTION_RUN_LIMIT + 1}}`), reason: "git with more global options than can be verified" },
 ];
 
 export const HEADLESS_BLOCKED = [
 	...CATASTROPHIC_BLOCKED,
-	{ pattern: /\bgit\s+commit\b/, reason: "git commit (commits are main-session operations)" },
-	{ pattern: /\bgit\s+pull\b/, reason: "git pull (pulls are main-session operations)" },
-	{ pattern: /\bgit\s+push\b/, reason: "git push (pushes are main-session operations)" },
+	{ pattern: gitPattern(String.raw`commit\b`), reason: "git commit (commits are main-session operations)" },
+	{ pattern: gitPattern(String.raw`pull\b`), reason: "git pull (pulls are main-session operations)" },
+	{ pattern: gitPattern(String.raw`push\b`), reason: "git push (pushes are main-session operations)" },
 ];
 
 export const MAIN_DISABLED_BLOCKED = [...CATASTROPHIC_BLOCKED];
 
 function catastrophicGitReason(args) {
 	const { globals, subcommand, subArgs } = gitCommandParts(args);
-	const execReason = gitGlobalExecReason(globals) ?? gitOptionExecReason(subcommand, subArgs);
+	const execReason = gitGlobalExecReason(globals) ?? gitUnverifiedReason(subcommand) ?? gitOptionExecReason(subcommand, subArgs);
 	if (execReason) return execReason;
 	if (subcommand === "push" && (hasShortFlag(subArgs, "f") || anyArgStartsWith(subArgs, "--force"))) return "git push --force (rewrites remote history)";
 	if (subcommand === "reset" && subArgs.includes("--hard")) return "discard all uncommitted changes (git reset --hard)";
@@ -877,8 +990,8 @@ function catastrophicGitReason(args) {
 
 function catastrophicSegmentReason(segment) {
 	const index = commandIndex(segment);
-	if (index === UNSAFE_TIME_COMMAND) return "time output or unsupported options cannot be verified safely";
-	if (index === null || index === ENV_SPLIT_STRING_COMMAND) return null;
+	if (index === null) return null;
+	if (typeof index !== "number") return index.opaque;
 	const envReason = envExecReason(tokensToStrings(segment.slice(0, index)));
 	if (envReason) return envReason;
 	const cmd = commandName(segment[index]);
@@ -923,9 +1036,8 @@ const MAX_NEST_DEPTH = 4;
 // the distinction gitGlobalExecReason() exists to make.
 function nestedShellPayloads(segment) {
 	const index = commandIndex(segment);
-	// Both sentinels are negative, so one bound covers null, ENV_SPLIT_STRING_COMMAND and
-	// UNSAFE_TIME_COMMAND; each already has its own handling where it matters.
-	if (index === null || index < 0) return [];
+	// An opaque result already has its own handling where it matters.
+	if (typeof index !== "number") return [];
 	if (commandName(segment[index]) === "rtk") {
 		// Only `rtk git` was unwrapped, so `rtk proxy git checkout -- .` was silent while the
 		// bare form prompted. The wrapped command is analysed whole, like a `bash -c` payload,
@@ -987,11 +1099,13 @@ function parsedBlockReason(command, headless, depth = 0) {
 function parsedLineBlockReason(command, headless, depth = 0) {
 	let tokens;
 	try {
-		tokens = shellParse(command);
+		tokens = parseCommand(command);
 	} catch {
 		return "unparseable shell command (cannot verify safety)";
 	}
-	for (const segment of splitOnOps(tokens, SPLIT_OPS)) {
+	// What a shell reads from a pipe cannot be checked, whatever writes it.
+	if (hasPipeToShell(tokens)) return "pipe to a shell (opaque command execution)";
+	for (const segment of commandSegments(tokens)) {
 		const reason = catastrophicSegmentReason(segment);
 		if (reason) return reason;
 		const payloads = nestedShellPayloads(segment);
@@ -1002,7 +1116,7 @@ function parsedLineBlockReason(command, headless, depth = 0) {
 		}
 		if (!headless) continue;
 		const index = commandIndex(segment);
-		if (index === null || index === ENV_SPLIT_STRING_COMMAND) continue;
+		if (typeof index !== "number") continue;
 		if (commandName(segment[index]) !== "git") continue;
 		const { subcommand } = gitCommandParts(tokensToStrings(segment.slice(index + 1)));
 		const headlessReason = HEADLESS_GIT_SUBCOMMANDS.get(subcommand);
