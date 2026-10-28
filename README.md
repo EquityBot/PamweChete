@@ -1,8 +1,15 @@
-# PamweChete
+<p align="center">
+  <picture>
+    <source media="(max-width: 600px) and (prefers-color-scheme: light)" srcset=".github/assets/banner-phone-light.svg">
+    <source media="(max-width: 600px)" srcset=".github/assets/banner-phone.svg">
+    <source media="(prefers-color-scheme: light)" srcset=".github/assets/banner-light.svg">
+    <img src=".github/assets/banner.svg" width="100%" alt="PamweChete: A pi coding-agent setup to copy piece by piece. Pixel art of the Greek letter pi beside the PamweChete wordmark in slab-serif block letters.">
+  </picture>
+</p>
 
-Ryan Duguid's personal [pi](https://github.com/earendil-works/pi) configuration, derived from Amos Blomqvist's [pi-config](https://github.com/amosblomqvist/pi-config) and extended from there.
+A personal [pi](https://github.com/earendil-works/pi) configuration, derived from Amos Blomqvist's [pi-config](https://github.com/amosblomqvist/pi-config) and extended from there.
 
-Clone: `https://github.com/ryanduguid/PamweChete.git`
+Clone: `https://github.com/EquityBot/PamweChete.git`
 
 This is not meant to be installed as one big package. Browse the repo and copy the pieces you want into your own Pi config.
 
@@ -11,9 +18,11 @@ This is not meant to be installed as one big package. Browse the repo and copy t
 Most of the extensions and skills here, and the shape of this README, started as Amos Blomqvist's [pi-config](https://github.com/amosblomqvist/pi-config). That work remains his. He walks through the original setup in [My Pi Setup After 6 Months](https://www.youtube.com/@EeroAlvar) and its predecessor [Pi Coding Agent Setup After 2 Months](https://www.youtube.com/watch?v=DWWrLlM3gwQ), on the channel that `assets/thumbnail.png` links to.
 
 [![video](assets/thumbnail.png)](https://www.youtube.com/@EeroAlvar)
-[![Verify](https://github.com/ryanduguid/PamweChete/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/ryanduguid/PamweChete/actions/workflows/verify.yml)
+[![Verify](https://github.com/EquityBot/PamweChete/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/EquityBot/PamweChete/actions/workflows/verify.yml)
 
 `amosblomqvist/pi-config` publishes no licence file, so there is no upstream licence for this repository to carry, and none is asserted on his behalf here. The derived parts are redistributed on the same unstated terms as upstream; nothing in this repository re-licenses them. Anyone wanting clear terms should ask Amos Blomqvist. This repository stays private.
+
+The banner's lettering and emblem are drawn from Cascadia Mono glyphs (SIL OFL 1.1).
 
 [`extensions/rtk/`](extensions/rtk/) is the one part with explicit terms. It adapts the Pi hook from [rtk-ai/rtk](https://github.com/rtk-ai/rtk) and carries that project's Apache-2.0 licence as [`extensions/rtk/LICENSE`](extensions/rtk/LICENSE).
 
@@ -31,7 +40,7 @@ This repo contains everything else.
 [`profiles/featherless/`](profiles/featherless/) screens models from
 [Abliterlitics](https://abliterlitics.dev/) for use through Featherless. Its catalogue
 records exact IDs, dated provider limits, prices and experimental request settings.
-All six entries are candidates. Ryan supplied the DavidAU entry as his current
+All six entries are candidates. The DavidAU entry was supplied as the current
 baseline on 26 September 2026. There is no qualified default.
 
 The workflow validates and stages a fresh profile, checks public provider metadata,
@@ -93,7 +102,7 @@ Avoid cloning this repo directly into `~/.pi/agent` unless it is a fresh setup. 
 - `rtk/`: asks RTK to compress supported Bash command output after bash-guard checks the command
 - `prompt-snippets/`: small, reusable behaviour rules toggled onto a message before sending; reset after send
 - `web-fetch/`: fetch a URL and get clean markdown
-  - Ryan's scope note: it fetches any address this machine can reach, loopback and private networks included; its private-address check only stops an internal URL going to the Jina fallback
+  - Scope note: it fetches any address this machine can reach, loopback and private networks included; its private-address check only stops an internal URL going to the Jina fallback
 - `web-search/`: web search
 
 ### Skills
@@ -137,3 +146,7 @@ Rendered images remain in the user's private `pi-pdf-reader` cache until they
 are removed. New renders stop when 64 render directories exist. Remove only
 completed directories after their images are no longer needed; existing image
 paths are never expired automatically.
+
+---
+
+<p align="center"><sub>Made by <a href="https://github.com/EquityBot">EquityBot</a>. <i>Ad gloriam eius, non meam.</i></sub></p>
