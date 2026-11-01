@@ -9,6 +9,8 @@
 
 A personal [pi](https://github.com/earendil-works/pi) configuration, derived from Amos Blomqvist's [pi-config](https://github.com/amosblomqvist/pi-config) and extended from there.
 
+This public repository is archived and retained as a reference configuration. Copy individual components only after checking their requirements and terms.
+
 Clone: `https://github.com/EquityBot/PamweChete.git`
 
 This is not meant to be installed as one big package. Browse the repo and copy the pieces you want into your own Pi config.
@@ -20,7 +22,7 @@ Most of the extensions and skills here, and the shape of this README, started as
 [![video](assets/thumbnail.png)](https://www.youtube.com/@EeroAlvar)
 [![Verify](https://github.com/EquityBot/PamweChete/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/EquityBot/PamweChete/actions/workflows/verify.yml)
 
-`amosblomqvist/pi-config` publishes no licence file, so there is no upstream licence for this repository to carry, and none is asserted on his behalf here. The derived parts are redistributed on the same unstated terms as upstream; nothing in this repository re-licenses them. Anyone wanting clear terms should ask Amos Blomqvist. This repository stays private.
+`amosblomqvist/pi-config` publishes no licence file, so there is no upstream licence for this repository to carry, and none is asserted on his behalf here. The derived parts are redistributed on the same unstated terms as upstream; nothing in this repository re-licenses them. Anyone wanting clear terms should ask Amos Blomqvist.
 
 The banner's lettering and emblem are drawn from Cascadia Mono glyphs (SIL OFL 1.1).
 
